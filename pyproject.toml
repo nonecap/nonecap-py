@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nonecap"
+dynamic = ["version"]
+description = "Official Python client for the NoneCap hCaptcha solving API."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Lunium" }]
+requires-python = ">=3.9"
+dependencies = ["httpx>=0.24"]
+keywords = [
+  "nonecap",
+  "hcaptcha",
+  "captcha",
+  "captcha-solver",
+  "hcaptcha-solver",
+  "api-client",
+  "sdk",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://nonecap.com"
+Documentation = "https://nonecap.com/api-reference"
+Repository = "https://github.com/nonecap/nonecap-py"
+Issues = "https://github.com/nonecap/nonecap-py/issues"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.24",
+  "mypy>=1.13",
+  "ruff>=0.8",
+]
+
+[tool.hatch.version]
+path = "src/nonecap/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nonecap"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+warn_unused_ignores = true
+files = ["src/nonecap", "tests/typing_assertions.py"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+# UP006/UP007/UP045: keep typing.Optional/Union and dict/list generics as written —
+# the floor is 3.9 and `X | None` in runtime positions needs 3.10.
+ignore = ["UP006", "UP007", "UP045"]
