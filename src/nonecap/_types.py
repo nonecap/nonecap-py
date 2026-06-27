@@ -97,12 +97,14 @@ class Solve:
 class SolvePage:
     """One page of solves, newest first."""
 
+    object: str
     data: list[Solve]
     has_more: bool
 
     @classmethod
     def _from_dict(cls, payload: dict[str, Any]) -> SolvePage:
         return cls(
+            object=payload.get("object", "list"),
             data=[Solve._from_dict(item) for item in payload.get("data", [])],
             has_more=bool(payload.get("has_more", False)),
         )
@@ -112,6 +114,7 @@ class SolvePage:
 class Account:
     """Your account, including the current credit balance."""
 
+    object: str
     id: str
     email: str
     credits_balance: int
@@ -120,6 +123,7 @@ class Account:
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> Account:
         return cls(
+            object=data.get("object", "account"),
             id=data["id"],
             email=data.get("email", ""),
             credits_balance=int(data.get("credits_balance", 0)),
