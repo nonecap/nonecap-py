@@ -97,6 +97,22 @@ async with AsyncNoneCap(api_key="nc_live_...") as nc:
 
 Cancelled solves are never charged, and a solve you simply abandon expires uncharged at the server deadline — nothing is billed unless a solve actually succeeds. So `cancel()` is for cleanup and early-stop, not cost protection.
 
+### Cleaning up after a `solve()` timeout
+
+`solve()` blocks until the solve settles, so it gives you no handle to cancel a solve while it's still running — for that, use `solves.start()` above. The one thing the `solve()` path offers is cleanup *after* a timeout: when `solve()` raises `SolveTimeoutError`, the error usually carries the in-flight `solve_id` (and last-known `solve`), so you can cancel the solve the wait gave up on. Guard on `solve_id` being present — if the very first submission times out at the transport level, no id has been assigned yet, so `solve_id` is `None`.
+
+```python
+from nonecap import SolveTimeoutError
+
+try:
+    nc.solve(type="hcaptcha", sitekey=sitekey, url=url)
+except SolveTimeoutError as err:
+    if err.solve_id is not None:
+        nc.solves.cancel(err.solve_id)
+    else:
+        raise
+```
+
 ## Handling failures
 
 Every error this library raises extends `NoneCapError`, so you can catch the whole family or pick out the one you care about.
