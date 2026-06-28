@@ -15,6 +15,7 @@ pyright, and a runtime check backs it up for untyped callers.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Iterator
 from typing import (
@@ -31,6 +32,7 @@ from ._errors import (
     APIConnectionError,
     APIError,
     APITimeoutError,
+    ConflictError,
     SolveFailedError,
     SolveTimeoutError,
     ValidationError,
@@ -234,6 +236,68 @@ class Solves:
         )
         return Solve._from_dict(payload)
 
+    @overload
+    def start(
+        self,
+        *,
+        type: Literal["hcaptcha"],
+        sitekey: str,
+        url: str,
+        rqdata: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        proxy: Union[Proxy, str, None] = None,
+        webhook_url: Optional[str] = None,
+    ) -> SolveHandle: ...
+
+    @overload
+    def start(
+        self,
+        *,
+        type: Literal["hcaptcha_enterprise"],
+        sitekey: str,
+        url: str,
+        rqdata: str,
+        user_agent: Optional[str] = None,
+        proxy: Union[Proxy, str, None] = None,
+        webhook_url: Optional[str] = None,
+    ) -> SolveHandle: ...
+
+    def start(
+        self,
+        *,
+        type: SolveType,
+        sitekey: str,
+        url: str,
+        rqdata: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        proxy: Union[Proxy, str, None] = None,
+        webhook_url: Optional[str] = None,
+    ) -> SolveHandle:
+        """Submit a solve and return a :class:`SolveHandle` without waiting.
+
+        The handle's ``id`` is populated immediately, so you can later
+        :meth:`SolveHandle.cancel` the solve or block on its outcome with
+        :meth:`SolveHandle.result`. Use this over :meth:`NoneCap.solve` when you
+        need to hold a reference you can cancel — for clean shutdown, freeing a
+        worker slot, or stopping early.
+        """
+        body = _build_solve_body(
+            type=type,
+            sitekey=sitekey,
+            url=url,
+            rqdata=rqdata,
+            user_agent=user_agent,
+            proxy=proxy,
+            webhook_url=webhook_url,
+        )
+        return self._start_from_body(body)
+
+    def _start_from_body(self, body: dict[str, Any]) -> SolveHandle:
+        """Shared by :meth:`start` and :meth:`NoneCap.solve`: POST the solve
+        (without long-polling) and wrap the pending resource in a handle."""
+        payload = self._client._request("POST", "/v1/solves", json=body)
+        return SolveHandle(self, Solve._from_dict(payload))
+
     def retrieve(self, solve_id: str, *, wait: Optional[int] = None) -> Solve:
         """Fetch a solve by id. Pass ``wait`` to long-poll until it finishes."""
         payload = self._client._request(
@@ -286,6 +350,81 @@ class Solves:
             if not page.has_more or not page.data:
                 return
             cursor = page.data[-1].id
+
+
+class SolveHandle:
+    """A handle to a submitted solve, returned by :meth:`Solves.start`.
+
+    Like :class:`asyncio.Task`, this is a distinct object you hold onto — not
+    the result itself. ``id`` is available as soon as ``start()`` returns; call
+    :meth:`result` to block until the solve finishes, or :meth:`cancel` to stop
+    it early.
+    """
+
+    def __init__(self, solves: Solves, solve: Solve) -> None:
+        self.id: str = solve.id
+        """The solve's id, available immediately after ``start()``."""
+        self._solves = solves
+        self._solve = solve
+        self._settled: Optional[Solve] = solve if solve.is_terminal else None
+
+    def result(self, timeout: Optional[float] = None) -> Solve:
+        """Wait for the solve to finish and return it.
+
+        Long-polls under the hood until the solve is terminal, exactly like
+        :meth:`NoneCap.solve`. ``timeout`` is the overall budget in seconds
+        (defaults to ``DEFAULT_SOLVE_TIMEOUT``). Raises :class:`SolveTimeoutError`
+        if the budget elapses first, or :class:`SolveFailedError` if the solve
+        ends without a token.
+
+        Only a *terminal* outcome is memoized: once the solve settles, later
+        calls replay it without another request. A :class:`SolveTimeoutError` is
+        not cached, so a later call with a larger ``timeout`` resumes polling.
+        """
+        if self._settled is not None:
+            return self._result_from(self._settled)
+        budget = DEFAULT_SOLVE_TIMEOUT if timeout is None else timeout
+        deadline = time.monotonic() + budget
+        solve = self._solve
+        while not solve.is_terminal:
+            if time.monotonic() >= deadline:
+                raise SolveTimeoutError(
+                    f"Solve {solve.id} did not finish within {budget:g}s "
+                    f"(last status: {solve.status}).",
+                    solve_id=solve.id,
+                    solve=solve,
+                )
+            solve = self._solves.retrieve(solve.id, wait=_wait_seconds(deadline))
+            self._solve = solve
+        self._settled = solve
+        return self._result_from(solve)
+
+    def cancel(self) -> Solve:
+        """Cancel the solve and return its resulting state. Cancelled solves are
+        never charged. If the solve has already finished, the server replies 409;
+        that is swallowed and the solve's current state is returned instead, so
+        cancelling a completed solve is never an error.
+
+        A terminal result (including ``cancelled``) is memoized as the handle's
+        settled outcome, so a later :meth:`result` reflects it instead of polling
+        — ``cancelled`` is terminal-but-not-solved, so ``result()`` then raises
+        :class:`SolveFailedError`.
+        """
+        try:
+            solve = self._solves.cancel(self.id)
+        except ConflictError:
+            solve = self._solves.retrieve(self.id)
+        self._solve = solve
+        if solve.is_terminal:
+            self._settled = solve
+        return solve
+
+    @staticmethod
+    def _result_from(solve: Solve) -> Solve:
+        """Map a settled (terminal) solve to ``result()``'s return/raise."""
+        if solve.status != "solved":
+            raise SolveFailedError(solve)
+        return solve
 
 
 class NoneCap(_BaseClient):
@@ -383,12 +522,14 @@ class NoneCap(_BaseClient):
         solve is terminal or ``timeout`` seconds elapse. Raises
         :class:`SolveFailedError` if the solve fails/expires/is cancelled, or
         :class:`SolveTimeoutError` on timeout.
+
+        This is sugar for ``solves.start(...).result(timeout)``; reach for
+        :meth:`Solves.start` directly when you need a handle you can cancel.
         """
-        deadline = time.monotonic() + timeout
         # Build the body directly rather than dispatching through the
-        # overloaded create(): the union-typed passthrough args defeat
-        # overload resolution, and the runtime rqdata check lives in
-        # _build_solve_body either way.
+        # overloaded start(): the union-typed passthrough args defeat overload
+        # resolution, and the runtime rqdata check lives in _build_solve_body
+        # either way.
         body = _build_solve_body(
             type=type,
             sitekey=sitekey,
@@ -398,21 +539,7 @@ class NoneCap(_BaseClient):
             proxy=proxy,
             webhook_url=webhook_url,
         )
-        wait = _wait_seconds(deadline)
-        payload = self._request(
-            "POST", "/v1/solves", params={"wait": wait}, json=body, wait=wait
-        )
-        solve = Solve._from_dict(payload)
-        while not solve.is_terminal:
-            if time.monotonic() >= deadline:
-                raise SolveTimeoutError(
-                    f"Solve {solve.id} did not finish within {timeout:g}s "
-                    f"(last status: {solve.status})."
-                )
-            solve = self.solves.retrieve(solve.id, wait=_wait_seconds(deadline))
-        if solve.status != "solved":
-            raise SolveFailedError(solve)
-        return solve
+        return self.solves._start_from_body(body).result(timeout)
 
     def me(self) -> Account:
         """Fetch your account, including the current credit balance."""
@@ -501,6 +628,68 @@ class AsyncSolves:
         )
         return Solve._from_dict(payload)
 
+    @overload
+    async def start(
+        self,
+        *,
+        type: Literal["hcaptcha"],
+        sitekey: str,
+        url: str,
+        rqdata: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        proxy: Union[Proxy, str, None] = None,
+        webhook_url: Optional[str] = None,
+    ) -> AsyncSolveHandle: ...
+
+    @overload
+    async def start(
+        self,
+        *,
+        type: Literal["hcaptcha_enterprise"],
+        sitekey: str,
+        url: str,
+        rqdata: str,
+        user_agent: Optional[str] = None,
+        proxy: Union[Proxy, str, None] = None,
+        webhook_url: Optional[str] = None,
+    ) -> AsyncSolveHandle: ...
+
+    async def start(
+        self,
+        *,
+        type: SolveType,
+        sitekey: str,
+        url: str,
+        rqdata: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        proxy: Union[Proxy, str, None] = None,
+        webhook_url: Optional[str] = None,
+    ) -> AsyncSolveHandle:
+        """Submit a solve and return an :class:`AsyncSolveHandle` without waiting.
+
+        The handle's ``id`` is populated immediately, so you can later
+        :meth:`AsyncSolveHandle.cancel` the solve or await its outcome with
+        :meth:`AsyncSolveHandle.result`. Use this over :meth:`AsyncNoneCap.solve`
+        when you need a handle you can cancel — for clean shutdown, freeing a
+        worker slot, or stopping early.
+        """
+        body = _build_solve_body(
+            type=type,
+            sitekey=sitekey,
+            url=url,
+            rqdata=rqdata,
+            user_agent=user_agent,
+            proxy=proxy,
+            webhook_url=webhook_url,
+        )
+        return await self._start_from_body(body)
+
+    async def _start_from_body(self, body: dict[str, Any]) -> AsyncSolveHandle:
+        """Shared by :meth:`start` and :meth:`AsyncNoneCap.solve`: POST the solve
+        (without long-polling) and wrap the pending resource in a handle."""
+        payload = await self._client._request("POST", "/v1/solves", json=body)
+        return AsyncSolveHandle(self, Solve._from_dict(payload))
+
     async def retrieve(self, solve_id: str, *, wait: Optional[int] = None) -> Solve:
         """Fetch a solve by id. Pass ``wait`` to long-poll until it finishes."""
         payload = await self._client._request(
@@ -556,6 +745,115 @@ class AsyncSolves:
             if not page.has_more or not page.data:
                 return
             cursor = page.data[-1].id
+
+
+class AsyncSolveHandle:
+    """A handle to a submitted solve, returned by ``await`` :meth:`AsyncSolves.start`.
+
+    Like :class:`asyncio.Task`, this is a distinct object you hold onto — not
+    the result itself. ``id`` is available as soon as ``start()`` resolves;
+    ``await`` :meth:`result` to wait until the solve finishes, or ``await``
+    :meth:`cancel` to stop it early.
+    """
+
+    def __init__(self, solves: AsyncSolves, solve: Solve) -> None:
+        self.id: str = solve.id
+        """The solve's id, available immediately after ``start()``."""
+        self._solves = solves
+        self._solve = solve
+        self._settled: Optional[Solve] = solve if solve.is_terminal else None
+        self._inflight: Optional[asyncio.Future[Solve]] = None
+
+    async def result(self, timeout: Optional[float] = None) -> Solve:
+        """Wait for the solve to finish and return it.
+
+        Long-polls under the hood until the solve is terminal, exactly like
+        :meth:`AsyncNoneCap.solve`. ``timeout`` is the overall budget in seconds
+        (defaults to ``DEFAULT_SOLVE_TIMEOUT``). Raises :class:`SolveTimeoutError`
+        if the budget elapses first, or :class:`SolveFailedError` if the solve
+        ends without a token.
+
+        Only a *terminal* outcome is memoized: once the solve settles, later
+        calls replay it without another request. A :class:`SolveTimeoutError` is
+        not cached, so a later call with a larger ``timeout`` resumes polling.
+        Concurrent calls share one in-flight poll rather than each opening their
+        own long-poll connection.
+        """
+        if self._settled is not None:
+            return self._result_from(self._settled)
+        budget = DEFAULT_SOLVE_TIMEOUT if timeout is None else timeout
+        if self._inflight is None:
+            self._inflight = asyncio.ensure_future(self._poll(budget))
+        task = self._inflight
+        try:
+            solve = await task
+        except asyncio.CancelledError:
+            # cancel() cancels the shared poll once it has settled the handle;
+            # awaiters then replay the cached terminal outcome.
+            if task.cancelled() and self._settled is not None:
+                return self._result_from(self._settled)
+            if self._inflight is task:
+                self._inflight = None
+            raise
+        except SolveTimeoutError:
+            # Timeouts are retryable: drop the shared poll so a later call (with
+            # a larger budget) starts fresh instead of replaying the timeout.
+            if self._inflight is task:
+                self._inflight = None
+            raise
+        if self._inflight is task:
+            self._inflight = None
+        self._settled = solve
+        return self._result_from(solve)
+
+    async def _poll(self, budget: float) -> Solve:
+        """The shared long-poll loop. Returns a terminal solve or raises
+        :class:`SolveTimeoutError`; never caches (the caller settles)."""
+        deadline = time.monotonic() + budget
+        solve = self._solve
+        while not solve.is_terminal:
+            if time.monotonic() >= deadline:
+                raise SolveTimeoutError(
+                    f"Solve {solve.id} did not finish within {budget:g}s "
+                    f"(last status: {solve.status}).",
+                    solve_id=solve.id,
+                    solve=solve,
+                )
+            solve = await self._solves.retrieve(solve.id, wait=_wait_seconds(deadline))
+            self._solve = solve
+        return solve
+
+    async def cancel(self) -> Solve:
+        """Cancel the solve and return its resulting state. Cancelled solves are
+        never charged. If the solve has already finished, the server replies 409;
+        that is swallowed and the solve's current state is returned instead, so
+        cancelling a completed solve is never an error.
+
+        A terminal result (including ``cancelled``) is memoized as the handle's
+        settled outcome and any in-flight :meth:`result` poll is stopped, so an
+        awaiting or later ``result()`` settles to the cancelled solve instead of
+        polling on. ``cancelled`` is terminal-but-not-solved, so ``result()``
+        then raises :class:`SolveFailedError`.
+        """
+        try:
+            solve = await self._solves.cancel(self.id)
+        except ConflictError:
+            solve = await self._solves.retrieve(self.id)
+        self._solve = solve
+        if solve.is_terminal:
+            self._settled = solve
+            inflight = self._inflight
+            self._inflight = None
+            if inflight is not None and not inflight.done():
+                inflight.cancel()
+        return solve
+
+    @staticmethod
+    def _result_from(solve: Solve) -> Solve:
+        """Map a settled (terminal) solve to ``result()``'s return/raise."""
+        if solve.status != "solved":
+            raise SolveFailedError(solve)
+        return solve
 
 
 class AsyncNoneCap(_BaseClient):
@@ -651,10 +949,13 @@ class AsyncNoneCap(_BaseClient):
         solve is terminal or ``timeout`` seconds elapse. Raises
         :class:`SolveFailedError` if the solve fails/expires/is cancelled, or
         :class:`SolveTimeoutError` on timeout.
+
+        This is sugar for ``(await solves.start(...)).result(timeout)``; reach
+        for :meth:`AsyncSolves.start` directly when you need a handle you can
+        cancel.
         """
-        deadline = time.monotonic() + timeout
         # Same shape as the sync client: build the body directly instead of
-        # dispatching through the overloaded create() with union-typed args.
+        # dispatching through the overloaded start() with union-typed args.
         body = _build_solve_body(
             type=type,
             sitekey=sitekey,
@@ -664,21 +965,8 @@ class AsyncNoneCap(_BaseClient):
             proxy=proxy,
             webhook_url=webhook_url,
         )
-        wait = _wait_seconds(deadline)
-        payload = await self._request(
-            "POST", "/v1/solves", params={"wait": wait}, json=body, wait=wait
-        )
-        solve = Solve._from_dict(payload)
-        while not solve.is_terminal:
-            if time.monotonic() >= deadline:
-                raise SolveTimeoutError(
-                    f"Solve {solve.id} did not finish within {timeout:g}s "
-                    f"(last status: {solve.status})."
-                )
-            solve = await self.solves.retrieve(solve.id, wait=_wait_seconds(deadline))
-        if solve.status != "solved":
-            raise SolveFailedError(solve)
-        return solve
+        handle = await self.solves._start_from_body(body)
+        return await handle.result(timeout)
 
     async def me(self) -> Account:
         """Fetch your account, including the current credit balance."""

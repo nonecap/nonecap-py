@@ -219,6 +219,129 @@ class TestSolveHelper:
             nc.solve(type="hcaptcha", sitekey="sk", url="https://e.com", timeout=0)
 
 
+class TestSolveHandle:
+    def test_start_returns_handle_with_id_without_polling(self) -> None:
+        script = Script((202, solve_payload(status="pending")))
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        assert handle.id == "solve_1"
+        assert len(script.requests) == 1  # only the create POST
+        assert script.requests[0].method == "POST"
+
+    def test_result_polls_until_terminal(self) -> None:
+        script = Script(
+            (202, solve_payload(status="pending")),
+            (202, solve_payload(status="solving")),
+            (200, solve_payload(status="solved", token="TOK")),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        solve = handle.result()
+        assert solve.token == "TOK"
+        assert len(script.requests) == 3
+        assert script.requests[1].method == "GET"
+
+    def test_result_is_cached_when_called_twice(self) -> None:
+        script = Script(
+            (202, solve_payload(status="pending")),
+            (200, solve_payload(status="solved", token="TOK")),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        first = handle.result()
+        count_after_first = len(script.requests)
+        second = handle.result()
+        assert first is second  # same settled outcome, replayed
+        assert len(script.requests) == count_after_first  # no extra request
+
+    def test_result_raises_solve_failed(self) -> None:
+        script = Script(
+            (202, solve_payload(status="pending")),
+            (200, solve_payload(status="failed", error={"code": "x", "message": "no"})),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        with pytest.raises(SolveFailedError):
+            handle.result()
+
+    def test_result_times_out(self) -> None:
+        script = Script((202, solve_payload(status="solving")))
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        with pytest.raises(SolveTimeoutError):
+            handle.result(timeout=0)
+
+    def test_timeout_carries_solve_id_and_solve(self) -> None:
+        script = Script((202, solve_payload(status="solving")))
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        with pytest.raises(SolveTimeoutError) as exc_info:
+            handle.result(timeout=0)
+        assert exc_info.value.solve_id == "solve_1"
+        assert exc_info.value.solve is not None
+        assert exc_info.value.solve.status == "solving"
+
+    def test_timeout_is_not_cached_and_resumes(self) -> None:
+        # timeout=0 raises without polling; a later call resumes to terminal.
+        script = Script(
+            (202, solve_payload(status="solving")),
+            (200, solve_payload(status="solved", token="TOK")),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        with pytest.raises(SolveTimeoutError):
+            handle.result(timeout=0)
+        assert len(script.requests) == 1  # only the POST; the timeout never polled
+        solve = handle.result(timeout=30)
+        assert solve.token == "TOK"
+        assert len(script.requests) == 2  # re-polled, did not replay the timeout
+
+    def test_cancel_then_result_settles_to_cancelled_without_polling(self) -> None:
+        script = Script(
+            (202, solve_payload(status="pending")),
+            (200, solve_payload(status="cancelled")),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        handle.cancel()
+        with pytest.raises(SolveFailedError) as exc_info:
+            handle.result()
+        assert exc_info.value.solve.status == "cancelled"
+        assert len(script.requests) == 2  # POST + DELETE only, no extra poll
+
+    def test_cancel_deletes_and_returns_state(self) -> None:
+        script = Script(
+            (202, solve_payload(status="pending")),
+            (200, solve_payload(status="cancelled")),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        solve = handle.cancel()
+        assert solve.status == "cancelled"
+        assert script.requests[1].method == "DELETE"
+
+    def test_cancel_after_terminal_swallows_conflict(self) -> None:
+        script = Script(
+            (202, solve_payload(status="pending")),
+            (409, error_payload("conflict")),
+            (200, solve_payload(status="solved", token="TOK")),
+        )
+        nc = client_for(script)
+        handle = nc.solves.start(type="hcaptcha", sitekey="sk", url="https://e.com")
+        solve = handle.cancel()
+        assert solve.status == "solved"
+        assert script.requests[1].method == "DELETE"  # the 409
+        assert script.requests[2].method == "GET"  # the retrieve fallback
+
+    def test_enterprise_without_rqdata_raises_locally(self) -> None:
+        script = Script((202, solve_payload()))
+        nc = client_for(script)
+        with pytest.raises(ValidationError) as exc_info:
+            nc.solves.start(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")  # type: ignore[call-overload]  # noqa: E501
+        assert exc_info.value.param == "rqdata"
+        assert script.requests == []
+
+
 class TestLifecycle:
     def test_cancel_deletes(self) -> None:
         script = Script((200, solve_payload(status="cancelled")))

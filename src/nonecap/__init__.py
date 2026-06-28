@@ -7,7 +7,7 @@
 'P1_...'
 """
 
-from ._client import AsyncNoneCap, NoneCap
+from ._client import AsyncNoneCap, AsyncSolveHandle, NoneCap, SolveHandle
 from ._errors import (
     APIConnectionError,
     APIError,
@@ -40,6 +40,9 @@ __all__ = [
     # clients
     "NoneCap",
     "AsyncNoneCap",
+    # handles
+    "SolveHandle",
+    "AsyncSolveHandle",
     # types
     "Solve",
     "SolveError",

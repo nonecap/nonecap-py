@@ -71,7 +71,26 @@ class APITimeoutError(APIConnectionError):
 
 
 class SolveTimeoutError(NoneCapError):
-    """Raised by ``solve()`` when the overall timeout elapses first."""
+    """Raised by ``solve()`` / ``SolveHandle.result()`` when the overall timeout
+    elapses before the solve reaches a terminal state.
+
+    When the timeout originates from waiting on a specific solve, ``solve_id`` is
+    the solve's id and ``solve`` is its last-known state (still non-terminal), so
+    you can retry or inspect the latest status. Both are ``None`` only if the
+    error was constructed without a solve in hand."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        solve_id: Optional[str] = None,
+        solve: Optional[Solve] = None,
+    ) -> None:
+        super().__init__(message)
+        self.solve_id = solve_id
+        """The id of the solve that did not finish in time, when known."""
+        self.solve = solve
+        """The last-known (non-terminal) solve at the moment of timeout, when known."""
 
 
 class SolveFailedError(NoneCapError):

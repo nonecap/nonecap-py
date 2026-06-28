@@ -55,6 +55,48 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## Cancelling a solve
+
+`solve()` is the simple path when you just want a token. When you need to hold a reference you can cancel — for clean shutdown, freeing a worker slot, or stopping early — use `solves.start()`. It submits the solve and hands back a `SolveHandle` right away, with the `id` already populated, instead of blocking on the result:
+
+```python
+handle = nc.solves.start(type="hcaptcha", sitekey=sitekey, url=url)
+print(handle.id)  # available immediately
+
+# Wait for it, just like solve():
+solve = handle.result(timeout=120)
+print(solve.token)
+```
+
+Holding the handle lets you stop a solve you no longer need — say, on shutdown or when a parallel attempt already won — instead of waiting on its result:
+
+```python
+handle = nc.solves.start(type="hcaptcha", sitekey=sitekey, url=url)
+
+# ... elsewhere / later, to stop it:
+handle.cancel()
+```
+
+`handle.result()` long-polls until the solve finishes and returns it, raising `SolveFailedError` / `SolveTimeoutError` like `solve()` does. The *terminal* outcome is memoized, so once the solve has settled, calling `result()` again replays it for free; a `SolveTimeoutError` is not memoized, so you can call `result()` again with a larger timeout to keep waiting. `handle.cancel()` stops a pending or in-flight solve and returns its final state — if the solve already finished, that's not an error, you just get the completed solve back.
+
+The async client mirrors this — `await` the start, the result, and the cancel:
+
+```python
+async with AsyncNoneCap(api_key="nc_live_...") as nc:
+    handle = await nc.solves.start(type="hcaptcha", sitekey=sitekey, url=url)
+    print(handle.id)
+
+    # Either wait for the outcome ...
+    solve = await handle.result(timeout=120)
+    print(solve.token)
+
+    # ... or, on another handle, cancel it instead of awaiting:
+    other = await nc.solves.start(type="hcaptcha", sitekey=sitekey, url=url)
+    await other.cancel()
+```
+
+Cancelled solves are never charged, and a solve you simply abandon expires uncharged at the server deadline — nothing is billed unless a solve actually succeeds. So `cancel()` is for cleanup and early-stop, not cost protection.
+
 ## Handling failures
 
 Every error this library raises extends `NoneCapError`, so you can catch the whole family or pick out the one you care about.
