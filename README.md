@@ -21,7 +21,7 @@ Python 3.9+. The only dependency is [httpx](https://www.python-httpx.org/).
 
 ## Quick start
 
-Grab an API key from [dashboard.nonecap.com](https://dashboard.nonecap.com), then:
+Grab an API key from [dashboard.nonecap.com](https://dashboard.nonecap.com/signup?utm_source=pypi&utm_medium=sdk-readme), then:
 
 ```python
 from nonecap import NoneCap
