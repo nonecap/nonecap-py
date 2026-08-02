@@ -135,11 +135,15 @@ class FeedbackReport(_FeedbackReportRequired, total=False):
     """One verdict to report, as passed to ``client.feedback.report_many``.
 
     ``solve_id`` is the id from ``solves.create`` / ``solve()``, and must be
-    your own solve that produced a token. ``estado`` is the raw downstream
-    boolean when your target has one (OSIPTEL's ``estado``: ``False`` =
-    accepted); the API rejects an item whose ``estado`` disagrees with its
-    ``outcome``. ``reason`` is freeform and truncated to 512 chars server-side.
-    ``reported_at`` is advisory only — the server stamps its own timestamps.
+    your own solve that produced a token. ``estado`` is deprecated and should be
+    omitted: it is a legacy downstream boolean with inverted polarity (``False``
+    = accepted, ``True`` = rejected), kept working for older integrations, and
+    it carries nothing ``outcome`` does not — the API rejects an item whose
+    ``estado`` disagrees with its ``outcome``. ``reason`` is freeform, truncated
+    to 512 chars server-side, and worth populating: whatever your target
+    returned when it refused the token (e.g. ``"invalid-response"``) is the only
+    part of a rejection NoneCap cannot observe on its own. ``reported_at`` is
+    advisory only — the server stamps its own timestamps.
     """
 
     estado: Optional[bool]
