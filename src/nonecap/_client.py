@@ -133,17 +133,17 @@ def _list_params(
 
 def _feedback_fields(
     outcome: FeedbackOutcome,
-    estado: Optional[bool],
     reason: Optional[str],
+    context: Optional[str],
     reported_at: Union[str, datetime, None],
 ) -> dict[str, Any]:
     """The body of one report. A ``datetime`` is sent as an ISO string; pass a
     timezone-aware one, since the server reads a naive timestamp as its own."""
     body: dict[str, Any] = {"outcome": outcome}
-    if estado is not None:
-        body["estado"] = estado
     if reason is not None:
         body["reason"] = reason
+    if context is not None:
+        body["context"] = context
     if reported_at is not None:
         body["reported_at"] = (
             reported_at.isoformat() if isinstance(reported_at, datetime) else reported_at
@@ -159,8 +159,8 @@ def _feedback_chunks(reports: Sequence[FeedbackReport]) -> Iterator[list[dict[st
                 "solve_id": report["solve_id"],
                 **_feedback_fields(
                     report["outcome"],
-                    report.get("estado"),
                     report.get("reason"),
+                    report.get("context"),
                     report.get("reported_at"),
                 ),
             }
@@ -511,8 +511,8 @@ class Feedbacks:
         solve_id: str,
         *,
         outcome: FeedbackOutcome,
-        estado: Optional[bool] = None,
         reason: Optional[str] = None,
+        context: Optional[str] = None,
         reported_at: Union[str, datetime, None] = None,
     ) -> Feedback:
         """Report one solve's downstream outcome and return what was recorded.
@@ -527,7 +527,7 @@ class Feedbacks:
         payload = self._client._request(
             "POST",
             f"/v1/solves/{solve_id}/feedback",
-            json=_feedback_fields(outcome, estado, reason, reported_at),
+            json=_feedback_fields(outcome, reason, context, reported_at),
         )
         return Feedback._from_dict(payload)
 
@@ -1012,8 +1012,8 @@ class AsyncFeedbacks:
         solve_id: str,
         *,
         outcome: FeedbackOutcome,
-        estado: Optional[bool] = None,
         reason: Optional[str] = None,
+        context: Optional[str] = None,
         reported_at: Union[str, datetime, None] = None,
     ) -> Feedback:
         """Report one solve's downstream outcome and return what was recorded.
@@ -1026,7 +1026,7 @@ class AsyncFeedbacks:
         payload = await self._client._request(
             "POST",
             f"/v1/solves/{solve_id}/feedback",
-            json=_feedback_fields(outcome, estado, reason, reported_at),
+            json=_feedback_fields(outcome, reason, context, reported_at),
         )
         return Feedback._from_dict(payload)
 

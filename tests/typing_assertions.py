@@ -56,10 +56,10 @@ async def positive_cases_async() -> None:
 
 def feedback_cases() -> None:
     _f: Feedback = nc.feedback.report("solve_1", outcome="accepted")
-    nc.feedback.report("solve_1", outcome="rejected", estado=True, reason="why")
+    nc.feedback.report("solve_1", outcome="rejected", reason="why", context="ctx")
     reports: list[FeedbackReport] = [
         {"solve_id": "solve_1", "outcome": "accepted"},
-        {"solve_id": "solve_2", "outcome": "rejected", "estado": True, "reason": "why"},
+        {"solve_id": "solve_2", "outcome": "rejected", "reason": "why", "context": "ctx"},
     ]
     _b: FeedbackBatch = nc.feedback.report_many(reports)
     # An unknown outcome must not type-check.

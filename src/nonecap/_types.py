@@ -135,19 +135,18 @@ class FeedbackReport(_FeedbackReportRequired, total=False):
     """One verdict to report, as passed to ``client.feedback.report_many``.
 
     ``solve_id`` is the id from ``solves.create`` / ``solve()``, and must be
-    your own solve that produced a token. ``estado`` is deprecated and should be
-    omitted: it is a legacy downstream boolean with inverted polarity (``False``
-    = accepted, ``True`` = rejected), kept working for older integrations, and
-    it carries nothing ``outcome`` does not — the API rejects an item whose
-    ``estado`` disagrees with its ``outcome``. ``reason`` is freeform, truncated
-    to 512 chars server-side, and worth populating: whatever your target
-    returned when it refused the token (e.g. ``"invalid-response"``) is the only
-    part of a rejection NoneCap cannot observe on its own. ``reported_at`` is
-    advisory only — the server stamps its own timestamps.
+    your own solve that produced a token. ``reason`` is the code or message your
+    target gave you when it refused the token (e.g. ``"invalid-response"``),
+    truncated to 512 chars server-side. ``context`` is optional free text with no
+    schema — anything about the attempt you think would help us diagnose it,
+    truncated to 2000 chars. Neither is parsed; they are what a human reads when
+    you raise a ticket, and they carry the half of a rejection NoneCap cannot
+    observe on its own. ``reported_at`` is advisory only — the server stamps its
+    own timestamps.
     """
 
-    estado: Optional[bool]
     reason: Optional[str]
+    context: Optional[str]
     reported_at: Union[str, datetime, None]
 
 
@@ -158,8 +157,8 @@ class Feedback:
     object: str
     solve_id: str
     outcome: FeedbackOutcome
-    estado: Optional[bool]
     reason: Optional[str]
+    context: Optional[str]
     reported_at: Optional[str]
     report_count: int
     """How many times this solve's verdict has been written. 1 on first report."""
@@ -172,8 +171,8 @@ class Feedback:
             object=data.get("object", "feedback"),
             solve_id=data["solve_id"],
             outcome=data["outcome"],
-            estado=data.get("estado"),
             reason=data.get("reason"),
+            context=data.get("context"),
             reported_at=data.get("reported_at"),
             report_count=int(data.get("report_count", 1)),
             created_at=data.get("created_at", ""),

@@ -33,8 +33,8 @@ def feedback_payload(**overrides: Any) -> dict[str, Any]:
         "object": "feedback",
         "solve_id": "solve_1",
         "outcome": "accepted",
-        "estado": None,
         "reason": None,
+        "context": None,
         "reported_at": None,
         "report_count": 1,
         "created_at": "2026-08-01T00:00:00Z",
@@ -67,32 +67,33 @@ def batch_payload(request: httpx.Request) -> httpx.Response:
 
 class TestReport:
     def test_posts_to_the_solves_feedback_path(self) -> None:
-        script = Script((200, feedback_payload(outcome="rejected", estado=True)))
+        script = Script((200, feedback_payload(outcome="rejected", context="3rd retry")))
         nc = client_for(script)
         result = nc.feedback.report(
-            "solve_1", outcome="rejected", estado=True, reason="documento no vigente"
+            "solve_1", outcome="rejected", reason="invalid-response", context="3rd retry"
         )
 
         assert script.requests[0].method == "POST"
         assert script.requests[0].url.path == "/v1/solves/solve_1/feedback"
         assert script.body_of(0) == {
             "outcome": "rejected",
-            "estado": True,
-            "reason": "documento no vigente",
+            "reason": "invalid-response",
+            "context": "3rd retry",
         }
         assert result.outcome == "rejected"
-        assert result.estado is True
+        assert result.context == "3rd retry"
 
     def test_omits_fields_the_caller_left_unset(self) -> None:
         script = Script((200, feedback_payload()))
         client_for(script).feedback.report("solve_1", outcome="accepted")
         assert script.body_of(0) == {"outcome": "accepted"}
 
-    def test_sends_estado_false(self) -> None:
-        # `if estado:` would drop the accepted signal — the one that matters.
-        script = Script((200, feedback_payload(estado=False)))
-        client_for(script).feedback.report("solve_1", outcome="accepted", estado=False)
-        assert script.body_of(0) == {"outcome": "accepted", "estado": False}
+    def test_sends_an_empty_context(self) -> None:
+        # `if context:` would drop an empty string, which is a deliberate "I have
+        # nothing to add" rather than an omission. Only None means unset.
+        script = Script((200, feedback_payload(context="")))
+        client_for(script).feedback.report("solve_1", outcome="accepted", context="")
+        assert script.body_of(0) == {"outcome": "accepted", "context": ""}
 
     def test_serializes_a_datetime_reported_at(self) -> None:
         script = Script((200, feedback_payload()))
@@ -123,8 +124,8 @@ class TestReportMany:
         script = Script(batch_payload)
         batch = client_for(script).feedback.report_many(
             [
-                {"solve_id": "solve_1", "outcome": "accepted", "estado": False},
-                {"solve_id": "solve_2", "outcome": "rejected", "estado": True},
+                {"solve_id": "solve_1", "outcome": "accepted"},
+                {"solve_id": "solve_2", "outcome": "rejected", "context": "3rd retry"},
             ]
         )
 
@@ -132,8 +133,8 @@ class TestReportMany:
         assert script.requests[0].url.path == "/v1/feedback"
         assert script.body_of(0) == {
             "feedback": [
-                {"solve_id": "solve_1", "outcome": "accepted", "estado": False},
-                {"solve_id": "solve_2", "outcome": "rejected", "estado": True},
+                {"solve_id": "solve_1", "outcome": "accepted"},
+                {"solve_id": "solve_2", "outcome": "rejected", "context": "3rd retry"},
             ]
         }
         assert batch.recorded == 2

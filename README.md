@@ -179,7 +179,8 @@ ok = submit_to_the_site_you_are_automating(solve.token)
 nc.feedback.report(
     solve.id,
     outcome="accepted" if ok else "rejected",
-    reason=None if ok else "session invalidated",  # optional, freeform
+    reason=None if ok else "session invalidated",  # optional, the code your target returned
+    context=None if ok else "3rd retry, rotating residential pool",  # optional, anything you think would help us diagnose it
 )
 ```
 
@@ -188,7 +189,7 @@ At volume, buffer the verdicts and flush them in one call. Reports over 500 are 
 ```python
 batch = nc.feedback.report_many([
     {"solve_id": "solve_01J...", "outcome": "accepted"},
-    {"solve_id": "solve_01J...", "outcome": "rejected", "reason": "..."},
+    {"solve_id": "solve_01J...", "outcome": "rejected", "reason": "...", "context": "..."},
 ])
 
 # Items resolve independently, so the call succeeds even when some are
