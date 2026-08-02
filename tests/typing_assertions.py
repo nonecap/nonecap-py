@@ -15,6 +15,9 @@ from typing import Optional
 from nonecap import (
     AsyncNoneCap,
     AsyncSolveHandle,
+    Feedback,
+    FeedbackBatch,
+    FeedbackReport,
     NoneCap,
     Solve,
     SolveHandle,
@@ -49,6 +52,27 @@ async def positive_cases_async() -> None:
     _r: Solve = await handle.result()
     _r2: Solve = await handle.result(timeout=10.0)
     _c: Solve = await handle.cancel()
+
+
+def feedback_cases() -> None:
+    _f: Feedback = nc.feedback.report("solve_1", outcome="accepted")
+    nc.feedback.report("solve_1", outcome="rejected", estado=True, reason="why")
+    reports: list[FeedbackReport] = [
+        {"solve_id": "solve_1", "outcome": "accepted"},
+        {"solve_id": "solve_2", "outcome": "rejected", "estado": True, "reason": "why"},
+    ]
+    _b: FeedbackBatch = nc.feedback.report_many(reports)
+    # An unknown outcome must not type-check.
+    nc.feedback.report("solve_1", outcome="maybe")  # type: ignore[arg-type]
+    # A report missing `outcome` must not type-check.
+    _bad: FeedbackReport = {"solve_id": "solve_1"}  # type: ignore[typeddict-item]
+
+
+async def feedback_cases_async() -> None:
+    _f: Feedback = await anc.feedback.report("solve_1", outcome="unused")
+    _b: FeedbackBatch = await anc.feedback.report_many(
+        [{"solve_id": "solve_1", "outcome": "accepted"}]
+    )
 
 
 def negative_cases() -> None:

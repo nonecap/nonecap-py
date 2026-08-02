@@ -166,6 +166,41 @@ nc.solve(
 )
 ```
 
+## Reporting token acceptance
+
+A token that hCaptcha blessed can still be refused by the site you send it to. Tell us what happened and we tune minting against your real acceptance rate — it's free, and it's the fastest way to get a regression on your sitekey noticed.
+
+Keep the `solve_id` next to the token you submit downstream, then report the verdict:
+
+```python
+solve = nc.solve(type="hcaptcha", sitekey=sitekey, url=url)
+ok = submit_to_the_site_you_are_automating(solve.token)
+
+nc.feedback.report(
+    solve.id,
+    outcome="accepted" if ok else "rejected",
+    reason=None if ok else "session invalidated",  # optional, freeform
+)
+```
+
+At volume, buffer the verdicts and flush them in one call. Reports over 500 are split across requests for you:
+
+```python
+batch = nc.feedback.report_many([
+    {"solve_id": "solve_01J...", "outcome": "accepted"},
+    {"solve_id": "solve_01J...", "outcome": "rejected", "reason": "..."},
+])
+
+# Items resolve independently, so the call succeeds even when some are
+# rejected — check `failed` rather than relying on a raised error.
+if batch.failed:
+    print([r for r in batch.results if r.status == "error"])
+```
+
+`outcome` is one of `accepted`, `rejected`, `unknown` (submitted, verdict unclear), `unused` (never submitted), or `error` (downstream broke for a non-token reason). Only `accepted` and `rejected` count toward the acceptance rate.
+
+Reporting the same solve again corrects the earlier verdict, so retries and late fixes are safe. You can report any of your own solved solves within ~30 days of the solve; corrections to something you already reported are never cut off by that window. On `AsyncNoneCap` both methods are coroutines.
+
 ## Lower-level API
 
 `solve()` is the convenient path. When you want control over submission and polling, the resource methods map one to one to the REST API:

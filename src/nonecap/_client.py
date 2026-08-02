@@ -6,6 +6,8 @@ Both clients expose the same surface:
   convenient path; long-polls under the hood).
 - ``client.solves.create / retrieve / cancel / list / list_all`` — the raw
   resource methods, mapping one to one to the REST API.
+- ``client.feedback.report / report_many`` — tell us whether the tokens we
+  minted were accepted downstream.
 - ``client.me()`` — account info and credit balance.
 
 ``rqdata`` is required for ``type="hcaptcha_enterprise"`` and optional for
@@ -17,7 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
+from datetime import datetime
 from typing import (
     Any,
     Literal,
@@ -38,7 +41,18 @@ from ._errors import (
     ValidationError,
     error_from_response,
 )
-from ._types import Account, Proxy, Solve, SolvePage, SolveStatus, SolveType
+from ._types import (
+    Account,
+    Feedback,
+    FeedbackBatch,
+    FeedbackOutcome,
+    FeedbackReport,
+    Proxy,
+    Solve,
+    SolvePage,
+    SolveStatus,
+    SolveType,
+)
 from ._version import __version__
 
 DEFAULT_BASE_URL = "https://api.nonecap.com"
@@ -48,6 +62,8 @@ DEFAULT_SOLVE_TIMEOUT = 180.0
 """Default overall budget (seconds) for the ``solve()`` helper."""
 _MAX_WAIT_SECONDS = 90
 """The API caps server-side long-poll at 90 seconds."""
+FEEDBACK_BATCH_MAX = 500
+"""The API caps one ``POST /v1/feedback`` call at 500 items."""
 
 _USER_AGENT = f"nonecap-python/{__version__}"
 
@@ -113,6 +129,55 @@ def _list_params(
     if type is not None:
         params["type"] = type
     return params
+
+
+def _feedback_fields(
+    outcome: FeedbackOutcome,
+    estado: Optional[bool],
+    reason: Optional[str],
+    reported_at: Union[str, datetime, None],
+) -> dict[str, Any]:
+    """The body of one report. A ``datetime`` is sent as an ISO string; pass a
+    timezone-aware one, since the server reads a naive timestamp as its own."""
+    body: dict[str, Any] = {"outcome": outcome}
+    if estado is not None:
+        body["estado"] = estado
+    if reason is not None:
+        body["reason"] = reason
+    if reported_at is not None:
+        body["reported_at"] = (
+            reported_at.isoformat() if isinstance(reported_at, datetime) else reported_at
+        )
+    return body
+
+
+def _feedback_chunks(reports: Sequence[FeedbackReport]) -> Iterator[list[dict[str, Any]]]:
+    """Split reports into request-sized batches, preserving order."""
+    for start in range(0, len(reports), FEEDBACK_BATCH_MAX):
+        yield [
+            {
+                "solve_id": report["solve_id"],
+                **_feedback_fields(
+                    report["outcome"],
+                    report.get("estado"),
+                    report.get("reason"),
+                    report.get("reported_at"),
+                ),
+            }
+            for report in reports[start : start + FEEDBACK_BATCH_MAX]
+        ]
+
+
+def _merged_batch(parts: list[FeedbackBatch]) -> FeedbackBatch:
+    """Fold the replies to a chunked ``report_many`` into one result."""
+    return FeedbackBatch(
+        object="feedback_batch",
+        recorded=sum(part.recorded for part in parts),
+        updated=sum(part.updated for part in parts),
+        unchanged=sum(part.unchanged for part in parts),
+        failed=sum(part.failed for part in parts),
+        results=[result for part in parts for result in part.results],
+    )
 
 
 def _process_response(response: httpx.Response) -> Any:
@@ -427,6 +492,77 @@ class SolveHandle:
         return solve
 
 
+class Feedbacks:
+    """Reporting what your downstream target did with the tokens we minted
+    (sync). Reached as ``client.feedback``.
+
+    Feedback is free, own-solves-only, and idempotent per solve id: reporting
+    the same solve again corrects the earlier verdict. Only solves that
+    produced a token can be reported, and only within the API's reporting
+    window (~30 days from the solve); a correction to something you already
+    reported is never cut off by that window.
+    """
+
+    def __init__(self, client: NoneCap) -> None:
+        self._client = client
+
+    def report(
+        self,
+        solve_id: str,
+        *,
+        outcome: FeedbackOutcome,
+        estado: Optional[bool] = None,
+        reason: Optional[str] = None,
+        reported_at: Union[str, datetime, None] = None,
+    ) -> Feedback:
+        """Report one solve's downstream outcome and return what was recorded.
+
+        Unlike :meth:`report_many`, a rejected report raises:
+        :class:`NotFoundError` if the solve is not yours or never minted a
+        token, :class:`ValidationError` if a field is wrong or the reporting
+        window has closed.
+
+        >>> nc.feedback.report(solve.id, outcome="rejected", reason="...")
+        """
+        payload = self._client._request(
+            "POST",
+            f"/v1/solves/{solve_id}/feedback",
+            json=_feedback_fields(outcome, estado, reason, reported_at),
+        )
+        return Feedback._from_dict(payload)
+
+    def report_many(self, reports: Sequence[FeedbackReport]) -> FeedbackBatch:
+        """Report many verdicts at once — the path to use at volume. Buffer
+        verdicts as you learn them and flush them here.
+
+        The call succeeds even when individual items are rejected: each is
+        resolved on its own so one stale id never discards the rest. Check
+        ``batch.failed`` rather than relying on a raised error.
+
+        More than ``FEEDBACK_BATCH_MAX`` reports are split across sequential
+        requests and merged into one result, in request order. An empty
+        sequence is a no-op that returns an empty batch without a request.
+
+        >>> batch = nc.feedback.report_many(
+        ...     [{"solve_id": "solve_01J...", "outcome": "accepted"}]
+        ... )
+        >>> [r for r in batch.results if r.status == "error"]
+        []
+        """
+        # Chunks go in order and the server upserts last-write-wins, so a solve
+        # reported twice still ends at its last value. Duplicates split across a
+        # chunk boundary each get written, though, so the earlier one reports
+        # "recorded"/"updated" where a single request would say "unchanged".
+        return _merged_batch(
+            [
+                FeedbackBatch._from_dict(
+                    self._client._request("POST", "/v1/feedback", json={"feedback": chunk})
+                )
+                for chunk in _feedback_chunks(reports)
+            ]
+        )
+
+
 class NoneCap(_BaseClient):
     """The NoneCap API client (sync).
 
@@ -449,6 +585,7 @@ class NoneCap(_BaseClient):
         self._http = http_client or httpx.Client()
         self._owns_http = http_client is None
         self.solves = Solves(self)
+        self.feedback = Feedbacks(self)
 
     def _request(
         self,
@@ -856,6 +993,65 @@ class AsyncSolveHandle:
         return solve
 
 
+class AsyncFeedbacks:
+    """Reporting what your downstream target did with the tokens we minted
+    (async). Reached as ``client.feedback``.
+
+    Feedback is free, own-solves-only, and idempotent per solve id: reporting
+    the same solve again corrects the earlier verdict. Only solves that
+    produced a token can be reported, and only within the API's reporting
+    window (~30 days from the solve); a correction to something you already
+    reported is never cut off by that window.
+    """
+
+    def __init__(self, client: AsyncNoneCap) -> None:
+        self._client = client
+
+    async def report(
+        self,
+        solve_id: str,
+        *,
+        outcome: FeedbackOutcome,
+        estado: Optional[bool] = None,
+        reason: Optional[str] = None,
+        reported_at: Union[str, datetime, None] = None,
+    ) -> Feedback:
+        """Report one solve's downstream outcome and return what was recorded.
+
+        Unlike :meth:`report_many`, a rejected report raises:
+        :class:`NotFoundError` if the solve is not yours or never minted a
+        token, :class:`ValidationError` if a field is wrong or the reporting
+        window has closed.
+        """
+        payload = await self._client._request(
+            "POST",
+            f"/v1/solves/{solve_id}/feedback",
+            json=_feedback_fields(outcome, estado, reason, reported_at),
+        )
+        return Feedback._from_dict(payload)
+
+    async def report_many(self, reports: Sequence[FeedbackReport]) -> FeedbackBatch:
+        """Report many verdicts at once — the path to use at volume. Buffer
+        verdicts as you learn them and flush them here.
+
+        The call succeeds even when individual items are rejected: each is
+        resolved on its own so one stale id never discards the rest. Check
+        ``batch.failed`` rather than relying on a raised error.
+
+        More than ``FEEDBACK_BATCH_MAX`` reports are split across sequential
+        requests and merged into one result, in request order. An empty
+        sequence is a no-op that returns an empty batch without a request.
+        """
+        # Same last-write-wins caveat across a chunk boundary as the sync client.
+        parts = []
+        for chunk in _feedback_chunks(reports):
+            payload = await self._client._request(
+                "POST", "/v1/feedback", json={"feedback": chunk}
+            )
+            parts.append(FeedbackBatch._from_dict(payload))
+        return _merged_batch(parts)
+
+
 class AsyncNoneCap(_BaseClient):
     """The NoneCap API client (async).
 
@@ -876,6 +1072,7 @@ class AsyncNoneCap(_BaseClient):
         self._http = http_client or httpx.AsyncClient()
         self._owns_http = http_client is None
         self.solves = AsyncSolves(self)
+        self.feedback = AsyncFeedbacks(self)
 
     async def _request(
         self,

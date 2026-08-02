@@ -7,7 +7,13 @@
 'P1_...'
 """
 
-from ._client import AsyncNoneCap, AsyncSolveHandle, NoneCap, SolveHandle
+from ._client import (
+    FEEDBACK_BATCH_MAX,
+    AsyncNoneCap,
+    AsyncSolveHandle,
+    NoneCap,
+    SolveHandle,
+)
 from ._errors import (
     APIConnectionError,
     APIError,
@@ -26,6 +32,13 @@ from ._errors import (
 from ._types import (
     TERMINAL_STATUSES,
     Account,
+    Feedback,
+    FeedbackBatch,
+    FeedbackItemError,
+    FeedbackOutcome,
+    FeedbackReport,
+    FeedbackResult,
+    FeedbackStatus,
     Proxy,
     Solve,
     SolveError,
@@ -52,6 +65,14 @@ __all__ = [
     "SolveType",
     "SolveStatus",
     "TERMINAL_STATUSES",
+    "Feedback",
+    "FeedbackReport",
+    "FeedbackBatch",
+    "FeedbackResult",
+    "FeedbackItemError",
+    "FeedbackOutcome",
+    "FeedbackStatus",
+    "FEEDBACK_BATCH_MAX",
     # errors
     "NoneCapError",
     "AuthenticationError",

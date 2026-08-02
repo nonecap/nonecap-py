@@ -8,7 +8,8 @@ ignore unknown ones, so new server-side fields never break old clients.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, TypedDict
+from datetime import datetime
+from typing import Any, Literal, Optional, TypedDict, Union
 
 SolveType = Literal["hcaptcha", "hcaptcha_enterprise"]
 """Captcha type a solve targets."""
@@ -107,6 +108,136 @@ class SolvePage:
             object=payload.get("object", "list"),
             data=[Solve._from_dict(item) for item in payload.get("data", [])],
             has_more=bool(payload.get("has_more", False)),
+        )
+
+
+FeedbackOutcome = Literal["accepted", "rejected", "unknown", "unused", "error"]
+"""What the downstream target did with a solve's token.
+
+``accepted`` and ``rejected`` are the quality signal and the only two that
+count toward the acceptance rate. ``unknown`` (submitted, verdict
+undetermined), ``unused`` (never submitted — expired, aborted, deduped) and
+``error`` (downstream broke for a non-token reason) are recorded but kept out
+of the denominator, so a client-side outage can't look like a regression.
+"""
+
+FeedbackStatus = Literal["recorded", "updated", "unchanged", "error"]
+"""What happened to one reported item: first report, overwrote an earlier one,
+identical to what was stored (no write), or rejected."""
+
+
+class _FeedbackReportRequired(TypedDict):
+    solve_id: str
+    outcome: FeedbackOutcome
+
+
+class FeedbackReport(_FeedbackReportRequired, total=False):
+    """One verdict to report, as passed to ``client.feedback.report_many``.
+
+    ``solve_id`` is the id from ``solves.create`` / ``solve()``, and must be
+    your own solve that produced a token. ``estado`` is the raw downstream
+    boolean when your target has one (OSIPTEL's ``estado``: ``False`` =
+    accepted); the API rejects an item whose ``estado`` disagrees with its
+    ``outcome``. ``reason`` is freeform and truncated to 512 chars server-side.
+    ``reported_at`` is advisory only — the server stamps its own timestamps.
+    """
+
+    estado: Optional[bool]
+    reason: Optional[str]
+    reported_at: Union[str, datetime, None]
+
+
+@dataclass(frozen=True)
+class Feedback:
+    """A recorded feedback resource."""
+
+    object: str
+    solve_id: str
+    outcome: FeedbackOutcome
+    estado: Optional[bool]
+    reason: Optional[str]
+    reported_at: Optional[str]
+    report_count: int
+    """How many times this solve's verdict has been written. 1 on first report."""
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def _from_dict(cls, data: dict[str, Any]) -> Feedback:
+        return cls(
+            object=data.get("object", "feedback"),
+            solve_id=data["solve_id"],
+            outcome=data["outcome"],
+            estado=data.get("estado"),
+            reason=data.get("reason"),
+            reported_at=data.get("reported_at"),
+            report_count=int(data.get("report_count", 1)),
+            created_at=data.get("created_at", ""),
+            updated_at=data.get("updated_at", ""),
+        )
+
+
+@dataclass(frozen=True)
+class FeedbackItemError:
+    """Why one item of a batch was rejected."""
+
+    code: str
+    message: str
+    param: Optional[str]
+
+
+@dataclass(frozen=True)
+class FeedbackResult:
+    """One item's result, in the same position as the report you sent."""
+
+    solve_id: str
+    status: FeedbackStatus
+    error: Optional[FeedbackItemError]
+    """Set only when ``status == "error"``."""
+
+    @classmethod
+    def _from_dict(cls, data: dict[str, Any]) -> FeedbackResult:
+        raw_error = data.get("error")
+        return cls(
+            solve_id=data.get("solve_id", ""),
+            status=data["status"],
+            error=FeedbackItemError(
+                code=raw_error.get("code", ""),
+                message=raw_error.get("message", ""),
+                param=raw_error.get("param"),
+            )
+            if raw_error
+            else None,
+        )
+
+
+@dataclass(frozen=True)
+class FeedbackBatch:
+    """The result of ``client.feedback.report_many``.
+
+    Items are resolved independently, so one bad solve id never discards the
+    rest — which also means a broken integration reports zero failures at the
+    HTTP level. Check ``failed`` (or scan ``results``), not just the absence of
+    a raised error.
+    """
+
+    object: str
+    recorded: int
+    updated: int
+    unchanged: int
+    failed: int
+    results: list[FeedbackResult]
+    """One entry per report you sent, in request order."""
+
+    @classmethod
+    def _from_dict(cls, payload: dict[str, Any]) -> FeedbackBatch:
+        return cls(
+            object=payload.get("object", "feedback_batch"),
+            recorded=int(payload.get("recorded", 0)),
+            updated=int(payload.get("updated", 0)),
+            unchanged=int(payload.get("unchanged", 0)),
+            failed=int(payload.get("failed", 0)),
+            results=[FeedbackResult._from_dict(item) for item in payload.get("results", [])],
         )
 
 

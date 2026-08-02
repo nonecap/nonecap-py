@@ -116,15 +116,20 @@ def error_from_response(
         cls = AuthenticationError
     elif code in ("forbidden", "account_locked"):
         cls = PermissionDeniedError
-    elif code == "insufficient_credits":
+    elif code in ("insufficient_credits", "key_credit_limit_exceeded"):
         cls = InsufficientCreditsError
-    elif code in ("invalid_request", "validation_error"):
+    elif code in ("invalid_request", "validation_error", "expired_window"):
         cls = ValidationError
-    elif code == "not_found":
+    elif code in ("not_found", "not_eligible"):
         cls = NotFoundError
     elif code == "conflict":
         cls = ConflictError
-    elif code in ("rate_limited", "concurrency_limit_exceeded", "ext_daily_limit"):
+    elif code in (
+        "rate_limited",
+        "concurrency_limit_exceeded",
+        "ext_daily_limit",
+        "sitekey_rate_limited",
+    ):
         cls = RateLimitError
     else:
         cls = APIError
