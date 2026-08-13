@@ -103,6 +103,11 @@ def _build_solve_body(
     body: dict[str, Any] = {"type": type, "sitekey": sitekey, "url": url}
     if rqdata is not None:
         body["rqdata"] = rqdata
+    # DEPRECATED 2026-08-13: still sent so nothing changes for callers who pass it, but the
+    # API accepts and ignores it. Every solve now presents its own coherent browser identity
+    # (user agent, client hints, language header and proof-of-work describing one machine);
+    # a caller-supplied string replaced only some of those and made the request contradict
+    # itself. Safe to stop passing.
     if user_agent is not None:
         body["user_agent"] = user_agent
     if proxy is not None:
