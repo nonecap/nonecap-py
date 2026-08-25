@@ -51,6 +51,10 @@ class Solve:
     url: str
     token: Optional[str]
     """The captcha token once ``status == "solved"``, otherwise None."""
+    resp_key: Optional[str]
+    """hCaptcha's response key for the challenge behind ``token`` (what the widget's
+    ``hcaptcha.getRespKey()`` returns, ``E0_…``). Sites that verify the token and key
+    together need both. Set alongside ``token``, otherwise None."""
     error: Optional[SolveError]
     """Set when the solve did not succeed, otherwise None."""
     credits_charged: Optional[int]
@@ -81,6 +85,7 @@ class Solve:
             sitekey=data.get("sitekey", ""),
             url=data.get("url", ""),
             token=data.get("token"),
+            resp_key=data.get("resp_key"),
             error=SolveError(code=raw_error["code"], message=raw_error["message"])
             if raw_error
             else None,
