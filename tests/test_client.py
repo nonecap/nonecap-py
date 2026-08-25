@@ -40,6 +40,24 @@ class TestConstruction:
         assert str(script.requests[0].url) == "https://x.test/v1/solves/solve_1"
 
 
+class TestRetrieve:
+    def test_returns_resp_key_beside_the_token(self) -> None:
+        script = Script(
+            (200, solve_payload(status="solved", token="P1_tok", resp_key="E0_key"))
+        )
+        nc = client_for(script)
+        solve = nc.solves.retrieve("solve_1")
+        assert solve.token == "P1_tok"
+        assert solve.resp_key == "E0_key"
+
+    def test_resp_key_is_none_when_absent(self) -> None:
+        payload = solve_payload(status="solved", token="P1_tok")
+        del payload["resp_key"]
+        script = Script((200, payload))
+        nc = client_for(script)
+        assert nc.solves.retrieve("solve_1").resp_key is None
+
+
 class TestCreate:
     def test_posts_with_bearer_auth_and_json_body(self) -> None:
         script = Script((202, solve_payload()))
@@ -202,9 +220,7 @@ class TestSolveHelper:
         assert script.requests[1].url.path == "/v1/solves/solve_1"
 
     def test_failed_solve_raises_with_solve_attached(self) -> None:
-        failed = solve_payload(
-            status="failed", error={"code": "unsolvable", "message": "no"}
-        )
+        failed = solve_payload(status="failed", error={"code": "unsolvable", "message": "no"})
         script = Script((200, failed))
         nc = client_for(script)
         with pytest.raises(SolveFailedError) as exc_info:
