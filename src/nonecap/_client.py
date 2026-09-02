@@ -205,20 +205,24 @@ def _process_response(response: httpx.Response) -> Any:
 
     error = (payload or {}).get("error") if isinstance(payload, dict) else None
     error = error if isinstance(error, dict) else {}
+    retry_after_raw = response.headers.get("retry-after")
+    retry_after = (
+        int(retry_after_raw) if retry_after_raw and retry_after_raw.isdigit() else None
+    )
     raise error_from_response(
         response.status_code,
         error.get("code"),
         error.get("message") or f"HTTP {response.status_code}",
         error.get("param"),
+        request_id=error.get("request_id") or response.headers.get("x-request-id"),
+        retry_after=retry_after,
     )
 
 
 class _BaseClient:
     def __init__(self, *, api_key: str, base_url: Optional[str], timeout: float) -> None:
         if not api_key:
-            raise ValueError(
-                "A NoneCap API key is required. Pass it as NoneCap(api_key=...)."
-            )
+            raise ValueError("A NoneCap API key is required. Pass it as NoneCap(api_key=...).")
         self._api_key = api_key
         self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self._timeout = timeout
@@ -879,9 +883,7 @@ class AsyncSolves:
         """
         cursor: Optional[str] = None
         while True:
-            page = await self.list(
-                limit=limit, starting_after=cursor, status=status, type=type
-            )
+            page = await self.list(limit=limit, starting_after=cursor, status=status, type=type)
             for solve in page.data:
                 yield solve
             if not page.has_more or not page.data:

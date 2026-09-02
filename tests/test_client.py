@@ -6,14 +6,20 @@ import pytest
 from nonecap import (
     APIError,
     AuthenticationError,
+    ConcurrencyLimitError,
     ConflictError,
     InsufficientCreditsError,
+    KeyCreditLimitError,
     NoneCap,
     NotFoundError,
+    PayloadTooLargeError,
     PermissionDeniedError,
     RateLimitError,
+    ServiceUnavailableError,
+    SitekeyRateLimitedError,
     SolveFailedError,
     SolveTimeoutError,
+    UnsupportedMediaTypeError,
     ValidationError,
 )
 
@@ -166,12 +172,25 @@ class TestErrorMapping:
             (403, "forbidden", PermissionDeniedError),
             (403, "account_locked", PermissionDeniedError),
             (402, "insufficient_credits", InsufficientCreditsError),
+            (402, "key_credit_limit_exceeded", KeyCreditLimitError),
+            (402, "key_credit_limit_exceeded", InsufficientCreditsError),
+            (400, "invalid_request", ValidationError),
             (422, "validation_error", ValidationError),
+            (422, "expired_window", ValidationError),
+            (413, "payload_too_large", PayloadTooLargeError),
+            (413, "payload_too_large", ValidationError),
+            (415, "unsupported_media_type", UnsupportedMediaTypeError),
+            (429, "concurrency_limit_exceeded", ConcurrencyLimitError),
             (429, "concurrency_limit_exceeded", RateLimitError),
+            (429, "sitekey_rate_limited", SitekeyRateLimitedError),
             (429, "rate_limited", RateLimitError),
             (409, "conflict", ConflictError),
             (404, "not_found", NotFoundError),
+            (404, "not_eligible", NotFoundError),
+            (503, "maintenance", ServiceUnavailableError),
+            (503, "maintenance", APIError),
             (500, "internal_error", APIError),
+            (500, "some_future_code", APIError),
         ],
     )
     def test_maps_envelope_to_subclass(
@@ -181,6 +200,67 @@ class TestErrorMapping:
         nc = client_for(script)
         with pytest.raises(expected):
             nc.me()
+
+    def test_reads_retry_after_and_request_id(self) -> None:
+        def responder(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                json={
+                    "error": {
+                        "code": "sitekey_rate_limited",
+                        "message": "shed",
+                        "param": None,
+                        "request_id": "req_1",
+                    }
+                },
+                headers={"Retry-After": "15", "X-Request-Id": "req_1"},
+            )
+
+        nc = client_for(Script(responder))
+        with pytest.raises(SitekeyRateLimitedError) as info:
+            nc.me()
+        assert info.value.retry_after == 15
+        assert info.value.request_id == "req_1"
+
+    def test_request_id_falls_back_to_the_header(self) -> None:
+        def responder(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                500,
+                json={"error": {"code": "internal_error", "message": "boom", "param": None}},
+                headers={"X-Request-Id": "req_2"},
+            )
+
+        nc = client_for(Script(responder))
+        with pytest.raises(APIError) as info:
+            nc.me()
+        assert info.value.request_id == "req_2"
+        assert info.value.retry_after is None
+
+    def test_solve_failed_error_exposes_reason_and_retryable(self) -> None:
+        failed = solve_payload(
+            status="failed",
+            error={
+                "code": "proxy_error",
+                "message": "Your proxy rejected the connection.",
+                "reason": "proxy_rejected",
+                "retryable": False,
+                "docs_url": "https://nonecap.com/api-reference#errors",
+            },
+        )
+        nc = client_for(Script((200, failed)))
+        with pytest.raises(SolveFailedError) as info:
+            nc.solve(type="hcaptcha", sitekey="sk", url="https://example.com")
+        assert info.value.solve_code == "proxy_error"
+        assert info.value.reason == "proxy_rejected"
+        assert info.value.retryable is False
+
+    def test_older_server_error_object_still_parses(self) -> None:
+        failed = solve_payload(status="failed", error={"code": "vision_error", "message": "x"})
+        nc = client_for(Script((200, failed)))
+        with pytest.raises(SolveFailedError) as info:
+            nc.solve(type="hcaptcha", sitekey="sk", url="https://example.com")
+        assert info.value.reason is None
+        assert info.value.retryable is True
 
     def test_exposes_param_code_and_status(self) -> None:
         script = Script((422, error_payload("validation_error", "bad", "sitekey")))
