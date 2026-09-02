@@ -129,14 +129,19 @@ from nonecap import (
 try:
     solve = nc.solve(type="hcaptcha", sitekey=sitekey, url=url)
 except SolveFailedError as err:
-    print("Could not solve it:", err.solve.error.code if err.solve.error else "?")
+    # The message says what happened, what to do, and that nothing was charged.
+    print(err.solve.error.message if err.solve.error else err)
+    if err.retryable:
+        schedule_retry()
 except InsufficientCreditsError:
     print("Out of credits. Top up at dashboard.nonecap.com")
-except RateLimitError:
-    print("Too many solves in flight, back off and retry")
+except RateLimitError as err:
+    time.sleep(err.retry_after or 1)
 ```
 
-The subclasses are `AuthenticationError` (401), `PermissionDeniedError` (403), `InsufficientCreditsError` (402), `ValidationError` (422/400, with a `param` naming the bad field), `NotFoundError` (404), `ConflictError` (409), `RateLimitError` (429), `APIError` (5xx), `APIConnectionError` and `APITimeoutError` (the request never landed), and `SolveTimeoutError` (your `solve()` budget ran out). `SolveFailedError` carries the full `solve` so you can read the underlying error code and the timings.
+The subclasses are `AuthenticationError` (401), `PermissionDeniedError` (403), `InsufficientCreditsError` (402, with `KeyCreditLimitError` when one API key hit its own cap), `ValidationError` (422/400, with a `param` naming the bad field; `PayloadTooLargeError` for 413 and `UnsupportedMediaTypeError` for 415), `NotFoundError` (404), `ConflictError` (409), `RateLimitError` (429, with `ConcurrencyLimitError` and `SitekeyRateLimitedError` telling the two apart; `retry_after` is the seconds the API asked you to wait), `APIError` (5xx, with `ServiceUnavailableError` for a maintenance pause), `APIConnectionError` and `APITimeoutError` (the request never landed), and `SolveTimeoutError` (your `solve()` budget ran out). Every error from a response carries `request_id`, the id to quote to support.
+
+`SolveFailedError` carries the full `solve`. `solve.error.code` is a `SolveErrorCode`, `solve.error.reason` a typed sub-reason or `None` (`proxy_rejected`, `sitekey_rate_limited`, …), and `solve.error.retryable` says whether resubmitting the same request unchanged can succeed; `err.retryable`, `err.reason` and `err.solve_code` are shortcuts to those fields. Failed solves are never charged.
 
 ## Enterprise captchas
 

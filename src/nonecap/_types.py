@@ -31,12 +31,49 @@ class Proxy(TypedDict, total=False):
     password: str
 
 
+SolveErrorCode = Literal[
+    "challenge_not_loaded",
+    "token_not_granted",
+    "challenge_expired",
+    "challenge_errored",
+    "proxy_error",
+    "target_unreachable",
+    "vision_error",
+    "internal_error",
+    "unsolvable_variant",
+    "capacity_exhausted",
+    "cancelled",
+    "expired",
+]
+"""Why a solve did not produce a token. Codes the API adds later still arrive as
+plain strings, so compare with ``==`` and keep a default branch."""
+
+SolveErrorReason = Literal[
+    "sitekey_rate_limited",
+    "passive_required",
+    "rounds_exhausted",
+    "proxy_rejected",
+    "proxy_tls",
+    "proxy_stalled",
+]
+"""A typed sub-reason within :data:`SolveErrorCode`, set when the solver knows more
+than the code says."""
+
+
 @dataclass(frozen=True)
 class SolveError:
     """The error attached to a solve that did not succeed."""
 
     code: str
+    """A :data:`SolveErrorCode`."""
     message: str
+    """What happened, what to do, and whether the solve was charged."""
+    reason: Optional[str] = None
+    """A :data:`SolveErrorReason`, or None when the code says it all."""
+    retryable: bool = True
+    """Whether re-submitting the same request unchanged can succeed."""
+    docs_url: str = "https://nonecap.com/api-reference#errors"
+    """Reference for the codes and reasons."""
 
 
 @dataclass(frozen=True)
@@ -86,7 +123,13 @@ class Solve:
             url=data.get("url", ""),
             token=data.get("token"),
             resp_key=data.get("resp_key"),
-            error=SolveError(code=raw_error["code"], message=raw_error["message"])
+            error=SolveError(
+                code=raw_error["code"],
+                message=raw_error["message"],
+                reason=raw_error.get("reason"),
+                retryable=bool(raw_error.get("retryable", True)),
+                docs_url=raw_error.get("docs_url", "https://nonecap.com/api-reference#errors"),
+            )
             if raw_error
             else None,
             credits_charged=data.get("credits_charged"),
