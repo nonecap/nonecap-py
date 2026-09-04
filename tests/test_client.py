@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import httpx
 import pytest
 
@@ -17,6 +19,7 @@ from nonecap import (
     RateLimitError,
     ServiceUnavailableError,
     SitekeyRateLimitedError,
+    SolveErrorReason,
     SolveFailedError,
     SolveTimeoutError,
     UnsupportedMediaTypeError,
@@ -252,6 +255,34 @@ class TestErrorMapping:
             nc.solve(type="hcaptcha", sitekey="sk", url="https://example.com")
         assert info.value.solve_code == "proxy_error"
         assert info.value.reason == "proxy_rejected"
+        assert info.value.retryable is False
+
+    @pytest.mark.parametrize(
+        ("code", "reason"),
+        [
+            ("proxy_error", "proxy_egress_blocked"),
+            ("target_unreachable", "target_egress_blocked"),
+        ],
+    )
+    def test_egress_blocked_solves_are_typed_and_not_retryable(
+        self, code: str, reason: str
+    ) -> None:
+        assert reason in get_args(SolveErrorReason)
+        failed = solve_payload(
+            status="failed",
+            error={
+                "code": code,
+                "message": "points at a private or internal network address",
+                "reason": reason,
+                "retryable": False,
+                "docs_url": "https://nonecap.com/api-reference#errors",
+            },
+        )
+        nc = client_for(Script((200, failed)))
+        with pytest.raises(SolveFailedError) as info:
+            nc.solve(type="hcaptcha", sitekey="sk", url="https://example.com")
+        assert info.value.solve_code == code
+        assert info.value.reason == reason
         assert info.value.retryable is False
 
     def test_older_server_error_object_still_parses(self) -> None:

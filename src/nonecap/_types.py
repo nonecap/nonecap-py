@@ -55,6 +55,8 @@ SolveErrorReason = Literal[
     "proxy_rejected",
     "proxy_tls",
     "proxy_stalled",
+    "proxy_egress_blocked",
+    "target_egress_blocked",
 ]
 """A typed sub-reason within :data:`SolveErrorCode`, set when the solver knows more
 than the code says."""
