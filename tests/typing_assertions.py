@@ -20,6 +20,7 @@ from nonecap import (
     FeedbackReport,
     NoneCap,
     Solve,
+    SolveErrorReason,
     SolveHandle,
     SolveTimeoutError,
 )
@@ -82,6 +83,14 @@ def negative_cases() -> None:
     nc.solves.start(type="hcaptcha_enterprise", sitekey="s", url="u")  # type: ignore[call-overload]
     # Unknown captcha type must not type-check.
     nc.solve(type="recaptcha", sitekey="s", url="u")  # type: ignore[call-overload]
+
+
+def egress_blocked_reasons() -> None:
+    # The egress guard's reasons are part of the typed vocabulary.
+    _r1: SolveErrorReason = "proxy_egress_blocked"
+    _r2: SolveErrorReason = "target_egress_blocked"
+    # A reason the API never defined must not type-check.
+    _bad: SolveErrorReason = "proxy_egress_blockd"  # type: ignore[assignment]
 
 
 def timeout_error_fields(err: SolveTimeoutError) -> None:
