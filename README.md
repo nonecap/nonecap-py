@@ -9,7 +9,7 @@
 
 <p align="center">Official Python client for the <a href="https://nonecap.com">NoneCap</a> hCaptcha solving API.</p>
 
-Submit a captcha, get back a token. The client handles the polling, the timeouts, and the error cases so you don't write the request loop yourself. Sync and async, fully typed.
+Submit an hCaptcha challenge from a site you are authorised to test or automate, get back a token. The client handles the polling, the timeouts, and the error cases so you don't write the request loop yourself. Sync and async, fully typed. Use is subject to the [NoneCap terms](https://nonecap.com/terms/).
 
 ## Install
 
@@ -180,13 +180,13 @@ Keep the `solve_id` next to the token you submit downstream, then report the ver
 
 ```python
 solve = nc.solve(type="hcaptcha", sitekey=sitekey, url=url)
-ok = submit_to_the_site_you_are_automating(solve.token)
+ok = submit_form(solve.token)
 
 nc.feedback.report(
     solve.id,
     outcome="accepted" if ok else "rejected",
     reason=None if ok else "session invalidated",  # optional, the code your target returned
-    context=None if ok else "3rd retry, rotating residential pool",  # optional, anything you think would help us diagnose it
+    context=None if ok else "3rd retry",  # optional, anything you think would help us diagnose it
 )
 ```
 
