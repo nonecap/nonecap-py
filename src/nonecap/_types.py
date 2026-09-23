@@ -57,6 +57,9 @@ SolveErrorReason = Literal[
     "proxy_stalled",
     "proxy_egress_blocked",
     "target_egress_blocked",
+    "profile_engine_unavailable",
+    "type_not_served",
+    "browser_lane_capped",
 ]
 """A typed sub-reason within :data:`SolveErrorCode`, set when the solver knows more
 than the code says."""

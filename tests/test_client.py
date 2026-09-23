@@ -285,6 +285,35 @@ class TestErrorMapping:
         assert info.value.reason == reason
         assert info.value.retryable is False
 
+    @pytest.mark.parametrize(
+        ("code", "reason", "retryable"),
+        [
+            ("capacity_exhausted", "profile_engine_unavailable", True),
+            ("capacity_exhausted", "browser_lane_capped", True),
+            ("internal_error", "type_not_served", False),
+        ],
+    )
+    def test_uncharged_capacity_and_type_reasons_are_typed(
+        self, code: str, reason: str, retryable: bool
+    ) -> None:
+        assert reason in get_args(SolveErrorReason)
+        failed = solve_payload(
+            status="failed",
+            error={
+                "code": code,
+                "message": "not charged",
+                "reason": reason,
+                "retryable": retryable,
+                "docs_url": "https://nonecap.com/api-reference#errors",
+            },
+        )
+        nc = client_for(Script((200, failed)))
+        with pytest.raises(SolveFailedError) as info:
+            nc.solve(type="hcaptcha", sitekey="sk", url="https://example.com")
+        assert info.value.solve_code == code
+        assert info.value.reason == reason
+        assert info.value.retryable is retryable
+
     def test_older_server_error_object_still_parses(self) -> None:
         failed = solve_payload(status="failed", error={"code": "vision_error", "message": "x"})
         nc = client_for(Script((200, failed)))
