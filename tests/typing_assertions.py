@@ -89,6 +89,9 @@ def egress_blocked_reasons() -> None:
     # The egress guard's reasons are part of the typed vocabulary.
     _r1: SolveErrorReason = "proxy_egress_blocked"
     _r2: SolveErrorReason = "target_egress_blocked"
+    _r3: SolveErrorReason = "profile_engine_unavailable"
+    _r4: SolveErrorReason = "type_not_served"
+    _r5: SolveErrorReason = "browser_lane_capped"
     # A reason the API never defined must not type-check.
     _bad: SolveErrorReason = "proxy_egress_blockd"  # type: ignore[assignment]
 
