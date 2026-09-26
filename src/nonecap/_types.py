@@ -110,6 +110,11 @@ class Solve:
     """Milliseconds the solve waited in the queue before a worker picked it up."""
     resolve_ms: Optional[int]
     """Milliseconds of actual solving."""
+    user_agent: Optional[str] = None
+    """The browser user agent the solve presented while it earned ``token``. Some sites
+    reject a token submitted by a different browser version, so send the token with this
+    as your ``User-Agent`` header (and from the same IP as your proxy, if you gave one).
+    Set alongside ``token``, otherwise None."""
 
     @property
     def is_terminal(self) -> bool:
@@ -144,6 +149,7 @@ class Solve:
             finished_at=data.get("finished_at"),
             queue_ms=data.get("queue_ms"),
             resolve_ms=data.get("resolve_ms"),
+            user_agent=data.get("user_agent"),
         )
 
 

@@ -66,6 +66,23 @@ class TestRetrieve:
         nc = client_for(script)
         assert nc.solves.retrieve("solve_1").resp_key is None
 
+    def test_returns_the_user_agent_the_solve_presented(self) -> None:
+        ua = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+        )
+        script = Script((200, solve_payload(status="solved", token="P1_tok", user_agent=ua)))
+        nc = client_for(script)
+        assert nc.solves.retrieve("solve_1").user_agent == ua
+
+    def test_user_agent_is_none_until_solved_or_when_absent(self) -> None:
+        nc = client_for(Script((200, solve_payload())))
+        assert nc.solves.retrieve("solve_1").user_agent is None
+        payload = solve_payload(status="solved", token="P1_tok")
+        del payload["user_agent"]
+        nc = client_for(Script((200, payload)))
+        assert nc.solves.retrieve("solve_1").user_agent is None
+
 
 class TestCreate:
     def test_posts_with_bearer_auth_and_json_body(self) -> None:
