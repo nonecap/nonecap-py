@@ -85,6 +85,12 @@ class SitekeyRateLimitedError(RateLimitError):
     Wait ``retry_after`` seconds; the message says whether a different proxy pool can help."""
 
 
+class ProxyUnavailableError(RateLimitError):
+    """429 — nearly every recent solve through the proxy you supplied failed because the
+    proxy refused the connection, so submits through it are shed. Fix the proxy or switch
+    exit; ``retry_after`` says when the next submit is let through to re-check it."""
+
+
 class APIError(NoneCapError):
     """5xx, or a response that was not the expected shape. ``request_id`` is the id to quote."""
 
@@ -184,6 +190,8 @@ def error_from_response(
         cls = ConcurrencyLimitError
     elif code == "sitekey_rate_limited":
         cls = SitekeyRateLimitedError
+    elif code == "proxy_unavailable":
+        cls = ProxyUnavailableError
     elif code in ("rate_limited", "ext_daily_limit"):
         cls = RateLimitError
     elif code == "maintenance":
