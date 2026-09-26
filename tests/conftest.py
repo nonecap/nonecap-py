@@ -45,6 +45,7 @@ def solve_payload(**overrides: Any) -> dict[str, Any]:
         "url": "https://example.com",
         "token": None,
         "resp_key": None,
+        "user_agent": None,
         "error": None,
         "credits_charged": None,
         "proxy_bytes": None,

@@ -36,6 +36,7 @@ solve = nc.solve(
 
 print(solve.token)  # the hCaptcha token, ready to submit
 print(solve.resp_key)  # hcaptcha.getRespKey() equivalent, for sites that verify the pair
+print(solve.user_agent)  # submit the token with this User-Agent: some sites check the browser version
 ```
 
 `solve()` submits the captcha and waits until it's done, using the API's long-poll so you aren't hammering it with requests. It returns the solved solve, or raises if the solve fails or your timeout runs out.
