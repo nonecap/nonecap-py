@@ -132,13 +132,13 @@ class TestCreate:
         assert body["proxy"] == {"scheme": "http", "host": "1.2.3.4", "port": 8080}
         assert body["webhook_url"] == "https://hook.test"
 
-    def test_enterprise_without_rqdata_raises_locally(self) -> None:
+    def test_enterprise_without_rqdata_is_sent_without_it(self) -> None:
         script = Script((202, solve_payload()))
         nc = client_for(script)
-        with pytest.raises(ValidationError) as exc_info:
-            nc.solves.create(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")  # type: ignore[call-overload]  # noqa: E501
-        assert exc_info.value.param == "rqdata"
-        assert script.requests == []  # never hit the network
+        nc.solves.create(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")
+        body = script.body_of(0)
+        assert body["type"] == "hcaptcha_enterprise"
+        assert "rqdata" not in body
 
 
 class TestList:
@@ -509,13 +509,12 @@ class TestSolveHandle:
         assert script.requests[1].method == "DELETE"  # the 409
         assert script.requests[2].method == "GET"  # the retrieve fallback
 
-    def test_enterprise_without_rqdata_raises_locally(self) -> None:
+    def test_enterprise_without_rqdata_starts(self) -> None:
         script = Script((202, solve_payload()))
         nc = client_for(script)
-        with pytest.raises(ValidationError) as exc_info:
-            nc.solves.start(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")  # type: ignore[call-overload]  # noqa: E501
-        assert exc_info.value.param == "rqdata"
-        assert script.requests == []
+        handle = nc.solves.start(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")
+        assert handle.id == solve_payload()["id"]
+        assert "rqdata" not in script.body_of(0)
 
 
 class TestLifecycle:
