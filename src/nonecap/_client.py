@@ -10,9 +10,8 @@ Both clients expose the same surface:
   minted were accepted downstream.
 - ``client.me()`` — account info and credit balance.
 
-``rqdata`` is required for ``type="hcaptcha_enterprise"`` and optional for
-``type="hcaptcha"``; the ``@overload`` signatures enforce that in mypy and
-pyright, and a runtime check backs it up for untyped callers.
+``rqdata`` is optional for both types: many enterprise sitekeys issue none.
+When the site passes one to its widget, send it.
 """
 
 from __future__ import annotations
@@ -23,10 +22,8 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import datetime
 from typing import (
     Any,
-    Literal,
     Optional,
     Union,
-    overload,
 )
 
 import httpx
@@ -38,7 +35,6 @@ from ._errors import (
     ConflictError,
     SolveFailedError,
     SolveTimeoutError,
-    ValidationError,
     error_from_response,
 )
 from ._types import (
@@ -94,12 +90,6 @@ def _build_solve_body(
     proxy: Union[Proxy, str, None],
     webhook_url: Optional[str],
 ) -> dict[str, Any]:
-    if type == "hcaptcha_enterprise" and not rqdata:
-        raise ValidationError(
-            "rqdata is required for hcaptcha_enterprise solves.",
-            code="validation_error",
-            param="rqdata",
-        )
     body: dict[str, Any] = {"type": type, "sitekey": sitekey, "url": url}
     if rqdata is not None:
         body["rqdata"] = rqdata
@@ -250,34 +240,6 @@ class Solves:
     def __init__(self, client: NoneCap) -> None:
         self._client = client
 
-    @overload
-    def create(
-        self,
-        *,
-        type: Literal["hcaptcha"],
-        sitekey: str,
-        url: str,
-        rqdata: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        wait: Optional[int] = None,
-    ) -> Solve: ...
-
-    @overload
-    def create(
-        self,
-        *,
-        type: Literal["hcaptcha_enterprise"],
-        sitekey: str,
-        url: str,
-        rqdata: str,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        wait: Optional[int] = None,
-    ) -> Solve: ...
-
     def create(
         self,
         *,
@@ -309,32 +271,6 @@ class Solves:
             wait=wait,
         )
         return Solve._from_dict(payload)
-
-    @overload
-    def start(
-        self,
-        *,
-        type: Literal["hcaptcha"],
-        sitekey: str,
-        url: str,
-        rqdata: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-    ) -> SolveHandle: ...
-
-    @overload
-    def start(
-        self,
-        *,
-        type: Literal["hcaptcha_enterprise"],
-        sitekey: str,
-        url: str,
-        rqdata: str,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-    ) -> SolveHandle: ...
 
     def start(
         self,
@@ -622,34 +558,6 @@ class NoneCap(_BaseClient):
             ) from exc
         return _process_response(response)
 
-    @overload
-    def solve(
-        self,
-        *,
-        type: Literal["hcaptcha"],
-        sitekey: str,
-        url: str,
-        rqdata: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        timeout: float = DEFAULT_SOLVE_TIMEOUT,
-    ) -> Solve: ...
-
-    @overload
-    def solve(
-        self,
-        *,
-        type: Literal["hcaptcha_enterprise"],
-        sitekey: str,
-        url: str,
-        rqdata: str,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        timeout: float = DEFAULT_SOLVE_TIMEOUT,
-    ) -> Solve: ...
-
     def solve(
         self,
         *,
@@ -672,10 +580,6 @@ class NoneCap(_BaseClient):
         This is sugar for ``solves.start(...).result(timeout)``; reach for
         :meth:`Solves.start` directly when you need a handle you can cancel.
         """
-        # Build the body directly rather than dispatching through the
-        # overloaded start(): the union-typed passthrough args defeat overload
-        # resolution, and the runtime rqdata check lives in _build_solve_body
-        # either way.
         body = _build_solve_body(
             type=type,
             sitekey=sitekey,
@@ -714,34 +618,6 @@ class AsyncSolves:
     def __init__(self, client: AsyncNoneCap) -> None:
         self._client = client
 
-    @overload
-    async def create(
-        self,
-        *,
-        type: Literal["hcaptcha"],
-        sitekey: str,
-        url: str,
-        rqdata: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        wait: Optional[int] = None,
-    ) -> Solve: ...
-
-    @overload
-    async def create(
-        self,
-        *,
-        type: Literal["hcaptcha_enterprise"],
-        sitekey: str,
-        url: str,
-        rqdata: str,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        wait: Optional[int] = None,
-    ) -> Solve: ...
-
     async def create(
         self,
         *,
@@ -773,32 +649,6 @@ class AsyncSolves:
             wait=wait,
         )
         return Solve._from_dict(payload)
-
-    @overload
-    async def start(
-        self,
-        *,
-        type: Literal["hcaptcha"],
-        sitekey: str,
-        url: str,
-        rqdata: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-    ) -> AsyncSolveHandle: ...
-
-    @overload
-    async def start(
-        self,
-        *,
-        type: Literal["hcaptcha_enterprise"],
-        sitekey: str,
-        url: str,
-        rqdata: str,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-    ) -> AsyncSolveHandle: ...
 
     async def start(
         self,
@@ -1107,34 +957,6 @@ class AsyncNoneCap(_BaseClient):
             ) from exc
         return _process_response(response)
 
-    @overload
-    async def solve(
-        self,
-        *,
-        type: Literal["hcaptcha"],
-        sitekey: str,
-        url: str,
-        rqdata: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        timeout: float = DEFAULT_SOLVE_TIMEOUT,
-    ) -> Solve: ...
-
-    @overload
-    async def solve(
-        self,
-        *,
-        type: Literal["hcaptcha_enterprise"],
-        sitekey: str,
-        url: str,
-        rqdata: str,
-        user_agent: Optional[str] = None,
-        proxy: Union[Proxy, str, None] = None,
-        webhook_url: Optional[str] = None,
-        timeout: float = DEFAULT_SOLVE_TIMEOUT,
-    ) -> Solve: ...
-
     async def solve(
         self,
         *,
@@ -1158,8 +980,6 @@ class AsyncNoneCap(_BaseClient):
         for :meth:`AsyncSolves.start` directly when you need a handle you can
         cancel.
         """
-        # Same shape as the sync client: build the body directly instead of
-        # dispatching through the overloaded start() with union-typed args.
         body = _build_solve_body(
             type=type,
             sitekey=sitekey,

@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from nonecap import AsyncNoneCap, SolveFailedError, SolveTimeoutError, ValidationError
+from nonecap import AsyncNoneCap, SolveFailedError, SolveTimeoutError
 
 from .conftest import Script, error_payload, solve_payload
 
@@ -55,12 +55,11 @@ async def test_solve_times_out() -> None:
         await nc.solve(type="hcaptcha", sitekey="sk", url="https://e.com", timeout=0)
 
 
-async def test_enterprise_without_rqdata_raises_locally() -> None:
+async def test_enterprise_without_rqdata_is_sent_without_it() -> None:
     script = Script((202, solve_payload()))
     nc = client_for(script)
-    with pytest.raises(ValidationError):
-        await nc.solves.create(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")  # type: ignore[call-overload]
-    assert script.requests == []
+    await nc.solves.create(type="hcaptcha_enterprise", sitekey="sk", url="https://e.com")
+    assert "rqdata" not in script.body_of(0)
 
 
 async def test_list_all_walks_pages() -> None:

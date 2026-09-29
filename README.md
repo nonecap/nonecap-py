@@ -146,14 +146,14 @@ The subclasses are `AuthenticationError` (401), `PermissionDeniedError` (403), `
 
 ## Enterprise captchas
 
-For `hcaptcha_enterprise`, `rqdata` is required. The `@overload` signatures enforce that in mypy and pyright, so leaving it out fails your type check, and a runtime check backs it up before any network call:
+For `hcaptcha_enterprise`, `rqdata` is optional: many enterprise sites never issue one. When the page does pass an `rqdata` blob to its widget, send it, fresh for each challenge:
 
 ```python
 solve = nc.solve(
     type="hcaptcha_enterprise",
     sitekey=sitekey,
     url=url,
-    rqdata="...",  # required for enterprise
+    rqdata="...",  # only when the site provides one
 )
 ```
 
