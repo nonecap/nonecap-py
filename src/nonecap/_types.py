@@ -60,6 +60,8 @@ SolveErrorReason = Literal[
     "profile_engine_unavailable",
     "type_not_served",
     "browser_lane_capped",
+    "recaptcha_not_loaded",
+    "refused_wording_unescaped",
 ]
 """A typed sub-reason within :data:`SolveErrorCode`, set when the solver knows more
 than the code says."""

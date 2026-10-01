@@ -311,6 +311,8 @@ class TestErrorMapping:
             ("capacity_exhausted", "profile_engine_unavailable", True),
             ("capacity_exhausted", "browser_lane_capped", True),
             ("internal_error", "type_not_served", False),
+            ("challenge_not_loaded", "recaptcha_not_loaded", False),
+            ("token_not_granted", "refused_wording_unescaped", True),
         ],
     )
     def test_uncharged_capacity_and_type_reasons_are_typed(

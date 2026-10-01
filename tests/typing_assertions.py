@@ -92,6 +92,8 @@ def egress_blocked_reasons() -> None:
     _r3: SolveErrorReason = "profile_engine_unavailable"
     _r4: SolveErrorReason = "type_not_served"
     _r5: SolveErrorReason = "browser_lane_capped"
+    _r6: SolveErrorReason = "recaptcha_not_loaded"
+    _r7: SolveErrorReason = "refused_wording_unescaped"
     # A reason the API never defined must not type-check.
     _bad: SolveErrorReason = "proxy_egress_blockd"  # type: ignore[assignment]
 
