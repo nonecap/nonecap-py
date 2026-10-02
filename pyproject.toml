@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "nonecap"
 dynamic = ["version"]
-description = "Official Python client for the NoneCap hCaptcha solving API."
+description = "Official Python client for NoneCap, the hCaptcha solver API."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
