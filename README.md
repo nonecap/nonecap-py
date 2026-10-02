@@ -7,7 +7,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
-<p align="center">Official Python client for the <a href="https://nonecap.com">NoneCap</a> hCaptcha solving API.</p>
+<p align="center">Official Python client for the NoneCap <a href="https://nonecap.com/">hCaptcha solver</a> API.</p>
 
 Submit a captcha, get back a token. The client handles the polling, the timeouts, and the error cases so you don't write the request loop yourself. Sync and async, fully typed.
 
