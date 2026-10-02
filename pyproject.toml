@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://nonecap.com"
+Homepage = "https://nonecap.com/"
 Documentation = "https://nonecap.com/api-reference"
 Repository = "https://github.com/nonecap/nonecap-py"
 Issues = "https://github.com/nonecap/nonecap-py/issues"
