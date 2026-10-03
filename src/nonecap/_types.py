@@ -62,6 +62,7 @@ SolveErrorReason = Literal[
     "browser_lane_capped",
     "recaptcha_not_loaded",
     "refused_wording_unescaped",
+    "session_capped",
 ]
 """A typed sub-reason within :data:`SolveErrorCode`, set when the solver knows more
 than the code says."""
