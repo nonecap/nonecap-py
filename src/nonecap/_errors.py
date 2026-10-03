@@ -91,6 +91,11 @@ class ProxyUnavailableError(RateLimitError):
     exit; ``retry_after`` says when the next submit is let through to re-check it."""
 
 
+class RateCappedError(RateLimitError):
+    """429 — your account has a submit rate cap on this sitekey and reached it for the
+    trailing minute. Nothing was charged; wait ``retry_after`` seconds."""
+
+
 class APIError(NoneCapError):
     """5xx, or a response that was not the expected shape. ``request_id`` is the id to quote."""
 
@@ -192,6 +197,8 @@ def error_from_response(
         cls = SitekeyRateLimitedError
     elif code == "proxy_unavailable":
         cls = ProxyUnavailableError
+    elif code == "rate_capped":
+        cls = RateCappedError
     elif code in ("rate_limited", "ext_daily_limit"):
         cls = RateLimitError
     elif code == "maintenance":
