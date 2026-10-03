@@ -313,6 +313,7 @@ class TestErrorMapping:
             ("internal_error", "type_not_served", False),
             ("challenge_not_loaded", "recaptcha_not_loaded", False),
             ("token_not_granted", "refused_wording_unescaped", True),
+            ("capacity_exhausted", "session_capped", True),
         ],
     )
     def test_uncharged_capacity_and_type_reasons_are_typed(
