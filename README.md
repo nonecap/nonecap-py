@@ -240,14 +240,15 @@ rec = nc.recognize(data={
 
 Here `rec.data` holds pages of 9 booleans for `image_label_binary`, one box per task (or `None`) plus `rec.points` per task for `image_label_area_select`, and per task a list of `{"entity_id", "x", "y", "w", "h"}` drop boxes for `image_drag_drop`. The field names are NopeCHA's recognition shapes, so a NopeCHA recognition integration ports over as is.
 
-When no answer is found, or the challenge type is not supported, `recognize()` raises `RecognitionFailedError` and nothing is charged. If an answer did not work on the challenge, report it within 15 minutes and the call is refunded in full:
+When no answer is found, or the challenge type is not supported, `recognize()` raises `RecognitionFailedError` and nothing is charged. A call that returns an answer is charged, whether or not the answer works on the challenge.
+
+You can tell us how the challenge ended. It is optional, it helps us track recognition accuracy, and it does not refund the call:
 
 ```python
-result = nc.report_recognition_outcome(rec.id, "failed")
-print(result.refunded_credits)
+nc.report_recognition_outcome(rec.id, "solved")  # or "failed"
 ```
 
-Reporting is optional, and the first report for an id sticks. On `AsyncNoneCap` both methods are coroutines.
+The first report for an id sticks. On `AsyncNoneCap` both methods are coroutines.
 
 ## Lower-level API
 

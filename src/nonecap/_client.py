@@ -702,8 +702,8 @@ class NoneCap(_BaseClient):
         site's bare domain, when you know it.
 
         Raises :class:`RecognitionFailedError` when no answer was found or the challenge
-        type is not supported; nothing is charged then. Report how the challenge ended
-        with :meth:`report_recognition_outcome` to get a failed one refunded.
+        type is not supported; nothing is charged then. An answered call is charged in
+        full, whether or not the answer works on the challenge.
 
         >>> rec = nc.recognize(
         ...     type="hcaptcha", task="Please click each image containing a bus",
@@ -728,11 +728,10 @@ class NoneCap(_BaseClient):
     ) -> RecognitionOutcomeResult:
         """Report whether a recognition's answer worked on the challenge.
 
-        Optional. ``"failed"`` refunds the recognition in full when reported within 15
-        minutes of it; ``"solved"`` only records it. The first report sticks: a repeat
-        returns the recorded outcome with ``refunded_credits == 0``. Raises
-        :class:`NotFoundError` for an id that is not one of your recognitions and
-        :class:`ValidationError` (code ``expired_window``) once the window has closed.
+        Optional, and it only records the result: it never refunds the call
+        (``refunded_credits`` is always 0). The first report for an id sticks; a repeat
+        returns the recorded outcome. Raises :class:`NotFoundError` for an id that is not
+        one of your recognitions.
         """
         payload = self._request(
             "POST", "/v1/recognize/outcome", json={"id": recognition_id, "result": result}
@@ -1192,8 +1191,8 @@ class AsyncNoneCap(_BaseClient):
         site's bare domain, when you know it.
 
         Raises :class:`RecognitionFailedError` when no answer was found or the challenge
-        type is not supported; nothing is charged then. Report how the challenge ended
-        with :meth:`report_recognition_outcome` to get a failed one refunded.
+        type is not supported; nothing is charged then. An answered call is charged in
+        full, whether or not the answer works on the challenge.
         """
         body = _build_recognize_body(
             type=type,
@@ -1211,11 +1210,10 @@ class AsyncNoneCap(_BaseClient):
     ) -> RecognitionOutcomeResult:
         """Report whether a recognition's answer worked on the challenge.
 
-        Optional. ``"failed"`` refunds the recognition in full when reported within 15
-        minutes of it; ``"solved"`` only records it. The first report sticks: a repeat
-        returns the recorded outcome with ``refunded_credits == 0``. Raises
-        :class:`NotFoundError` for an id that is not one of your recognitions and
-        :class:`ValidationError` (code ``expired_window``) once the window has closed.
+        Optional, and it only records the result: it never refunds the call
+        (``refunded_credits`` is always 0). The first report for an id sticks; a repeat
+        returns the recorded outcome. Raises :class:`NotFoundError` for an id that is not
+        one of your recognitions.
         """
         payload = await self._request(
             "POST", "/v1/recognize/outcome", json={"id": recognition_id, "result": result}

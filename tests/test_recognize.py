@@ -209,7 +209,7 @@ class TestRecognize:
 
 class TestReportRecognitionOutcome:
     def test_posts_the_outcome(self) -> None:
-        script = Script((200, {"id": SESSION_ID, "result": "failed", "refunded_credits": 10}))
+        script = Script((200, {"id": SESSION_ID, "result": "failed", "refunded_credits": 0}))
         result = client_for(script).report_recognition_outcome(SESSION_ID, "failed")
 
         assert script.requests[0].method == "POST"
@@ -217,20 +217,17 @@ class TestReportRecognitionOutcome:
         assert script.body_of(0) == {"id": SESSION_ID, "result": "failed"}
         assert result.id == SESSION_ID
         assert result.result == "failed"
-        assert result.refunded_credits == 10
+        assert result.refunded_credits == 0
 
     def test_raises_not_found_for_an_unknown_id(self) -> None:
         script = Script((404, error_payload("not_found")))
         with pytest.raises(NotFoundError):
             client_for(script).report_recognition_outcome(SESSION_ID, "solved")
 
-    def test_raises_validation_error_once_the_window_closed(self) -> None:
-        script = Script(
-            (422, error_payload("expired_window", "outcomes are accepted for 15 minutes"))
-        )
-        with pytest.raises(ValidationError) as excinfo:
-            client_for(script).report_recognition_outcome(SESSION_ID, "failed")
-        assert excinfo.value.code == "expired_window"
+    def test_a_repeat_returns_the_first_report(self) -> None:
+        script = Script((200, {"id": SESSION_ID, "result": "solved", "refunded_credits": 0}))
+        result = client_for(script).report_recognition_outcome(SESSION_ID, "failed")
+        assert result.result == "solved"
 
 
 class TestAsyncRecognize:

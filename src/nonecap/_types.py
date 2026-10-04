@@ -439,9 +439,9 @@ class RecognitionOutcomeResult:
 
     id: str
     result: RecognitionOutcome
-    """The recorded outcome. The first report sticks: a repeat returns it with
-    ``refunded_credits == 0``."""
+    """The recorded outcome. The first report sticks, so a repeat returns the first."""
     refunded_credits: int
+    """Always 0: reporting an outcome never refunds the call."""
 
     @classmethod
     def _from_dict(cls, payload: dict[str, Any]) -> RecognitionOutcomeResult:
