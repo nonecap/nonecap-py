@@ -17,6 +17,7 @@ from nonecap import (
     PayloadTooLargeError,
     PermissionDeniedError,
     ProxyUnavailableError,
+    RateCappedError,
     RateLimitError,
     ServiceUnavailableError,
     SitekeyRateLimitedError,
@@ -206,6 +207,8 @@ class TestErrorMapping:
             (429, "sitekey_rate_limited", SitekeyRateLimitedError),
             (429, "proxy_unavailable", ProxyUnavailableError),
             (429, "proxy_unavailable", RateLimitError),
+            (429, "rate_capped", RateCappedError),
+            (429, "rate_capped", RateLimitError),
             (429, "rate_limited", RateLimitError),
             (409, "conflict", ConflictError),
             (404, "not_found", NotFoundError),
@@ -244,6 +247,29 @@ class TestErrorMapping:
             nc.me()
         assert info.value.retry_after == 15
         assert info.value.request_id == "req_1"
+
+    def test_rate_capped_carries_the_retry_after_delay(self) -> None:
+        def responder(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                json={
+                    "error": {
+                        "code": "rate_capped",
+                        "message": "capped",
+                        "param": None,
+                        "request_id": "req_3",
+                    }
+                },
+                headers={"Retry-After": "7"},
+            )
+
+        nc = client_for(Script(responder))
+        with pytest.raises(RateCappedError) as info:
+            nc.me()
+        assert isinstance(info.value, RateLimitError)
+        assert info.value.code == "rate_capped"
+        assert info.value.retry_after == 7
+        assert info.value.request_id == "req_3"
 
     def test_request_id_falls_back_to_the_header(self) -> None:
         def responder(request: httpx.Request) -> httpx.Response:
