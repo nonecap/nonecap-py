@@ -96,6 +96,11 @@ class RateCappedError(RateLimitError):
     trailing minute. Nothing was charged; wait ``retry_after`` seconds."""
 
 
+class RecognitionFailedError(NoneCapError):
+    """422 — ``recognize()`` found no answer for these images, or the challenge type is not
+    supported. Nothing was charged; load a fresh challenge and retry."""
+
+
 class APIError(NoneCapError):
     """5xx, or a response that was not the expected shape. ``request_id`` is the id to quote."""
 
@@ -201,6 +206,8 @@ def error_from_response(
         cls = RateCappedError
     elif code in ("rate_limited", "ext_daily_limit"):
         cls = RateLimitError
+    elif code == "recognition_failed":
+        cls = RecognitionFailedError
     elif code == "maintenance":
         cls = ServiceUnavailableError
     else:

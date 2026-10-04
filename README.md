@@ -140,7 +140,7 @@ except RateLimitError as err:
     time.sleep(err.retry_after or 1)
 ```
 
-The subclasses are `AuthenticationError` (401), `PermissionDeniedError` (403), `InsufficientCreditsError` (402, with `KeyCreditLimitError` when one API key hit its own cap), `ValidationError` (422/400, with a `param` naming the bad field; `PayloadTooLargeError` for 413 and `UnsupportedMediaTypeError` for 415), `NotFoundError` (404), `ConflictError` (409), `RateLimitError` (429, with `ConcurrencyLimitError`, `SitekeyRateLimitedError`, `ProxyUnavailableError` (your own proxy is refusing connections) and `RateCappedError` (your account reached its submit rate cap on this sitekey) telling them apart; `retry_after` is the seconds the API asked you to wait), `APIError` (5xx, with `ServiceUnavailableError` for a maintenance pause), `APIConnectionError` and `APITimeoutError` (the request never landed), and `SolveTimeoutError` (your `solve()` budget ran out). Every error from a response carries `request_id`, the id to quote to support.
+The subclasses are `AuthenticationError` (401), `PermissionDeniedError` (403), `InsufficientCreditsError` (402, with `KeyCreditLimitError` when one API key hit its own cap), `ValidationError` (422/400, with a `param` naming the bad field; `PayloadTooLargeError` for 413 and `UnsupportedMediaTypeError` for 415), `NotFoundError` (404), `ConflictError` (409), `RateLimitError` (429, with `ConcurrencyLimitError`, `SitekeyRateLimitedError`, `ProxyUnavailableError` (your own proxy is refusing connections) and `RateCappedError` (your account reached its submit rate cap on this sitekey) telling them apart; `retry_after` is the seconds the API asked you to wait), `RecognitionFailedError` (422, `recognize()` found no answer; nothing was charged), `APIError` (5xx, with `ServiceUnavailableError` for a maintenance pause), `APIConnectionError` and `APITimeoutError` (the request never landed), and `SolveTimeoutError` (your `solve()` budget ran out). Every error from a response carries `request_id`, the id to quote to support.
 
 `SolveFailedError` carries the full `solve`. `solve.error.code` is a `SolveErrorCode`, `solve.error.reason` a typed sub-reason or `None` (`proxy_rejected`, `sitekey_rate_limited`, …), and `solve.error.retryable` says whether resubmitting the same request unchanged can succeed; `err.retryable`, `err.reason` and `err.solve_code` are shortcuts to those fields. Failed solves are never charged.
 
@@ -208,6 +208,47 @@ if batch.failed:
 `outcome` is one of `accepted`, `rejected`, `unknown` (submitted, verdict unclear), `unused` (never submitted), or `error` (downstream broke for a non-token reason). Only `accepted` and `rejected` count toward the acceptance rate.
 
 Reporting the same solve again corrects the earlier verdict, so retries and late fixes are safe. You can report any of your own solved solves within ~30 days of the solve; corrections to something you already reported are never cut off by that window. On `AsyncNoneCap` both methods are coroutines.
+
+## Recognizing images
+
+When you run your own browser or extension and only need the answer to a challenge, send its images and instruction to `recognize()`. The answer comes back in the same response: no token, no polling.
+
+```python
+rec = nc.recognize(
+    type="hcaptcha",
+    task="Please click each image containing a bus",
+    image_data=tiles,  # base64 strings, data: URIs or raw bytes; or image_urls=[...] for hCaptcha image URLs
+)
+print(rec.data)  # [True, False, False, True, ...], one per tile
+```
+
+`type="hcaptcha"` takes 1 to 27 tiles and answers one boolean per tile. `type="hcaptcha_area_select"` takes exactly one image and answers the first point to click as `rec.data` (`{"x", "y", "w": 0, "h": 0}`, in percent of the image), with every point in `rec.points` for wordings that need several clicks. Pass `image_examples` when the challenge shows example images, and `host` (the site's bare domain) when you know it.
+
+You can also send the challenge's tasklist as hCaptcha served it, which covers drag-and-drop too:
+
+```python
+rec = nc.recognize(data={
+    "request_type": "image_drag_drop",
+    "requester_question": {"en": "Drag the piece to complete the image"},
+    "tasklist": [{
+        "task_key": "...",
+        "datapoint_uri": image_b64,
+        "entities": [{"entity_id": "...", "entity_uri": piece_b64, "coords": [10, 20], "size": [40, 30]}],
+    }],
+})
+```
+
+Here `rec.data` holds pages of 9 booleans for `image_label_binary`, one box per task (or `None`) plus `rec.points` per task for `image_label_area_select`, and per task a list of `{"entity_id", "x", "y", "w", "h"}` drop boxes for `image_drag_drop`. The field names are NopeCHA's recognition shapes, so a NopeCHA recognition integration ports over as is.
+
+When no answer is found, or the challenge type is not supported, `recognize()` raises `RecognitionFailedError` and nothing is charged. A call that returns an answer is charged, whether or not the answer works on the challenge.
+
+You can tell us how the challenge ended. It is optional, it helps us track recognition accuracy, and it does not refund the call:
+
+```python
+nc.report_recognition_outcome(rec.id, "solved")  # or "failed"
+```
+
+The first report for an id sticks. On `AsyncNoneCap` both methods are coroutines.
 
 ## Lower-level API
 
