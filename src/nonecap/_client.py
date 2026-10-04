@@ -8,6 +8,8 @@ Both clients expose the same surface:
   resource methods, mapping one to one to the REST API.
 - ``client.feedback.report / report_many`` — tell us whether the tokens we
   minted were accepted downstream.
+- ``client.recognize(...)`` / ``client.report_recognition_outcome(...)`` — the
+  answer to one challenge's images, for callers that run their own browser.
 - ``client.me()`` — account info and credit balance.
 
 ``rqdata`` is optional for both types: many enterprise sitekeys issue none.
@@ -17,13 +19,16 @@ When the site passes one to its widget, send it.
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import datetime
 from typing import (
     Any,
+    Literal,
     Optional,
     Union,
+    overload,
 )
 
 import httpx
@@ -44,6 +49,15 @@ from ._types import (
     FeedbackOutcome,
     FeedbackReport,
     Proxy,
+    Recognition,
+    RecognitionOutcome,
+    RecognitionOutcomeResult,
+    RecognitionTasklistData,
+    RecognizeBox,
+    RecognizeImage,
+    RecognizePoint,
+    RecognizeTasklist,
+    RecognizeType,
     Solve,
     SolvePage,
     SolveStatus,
@@ -173,6 +187,51 @@ def _merged_batch(parts: list[FeedbackBatch]) -> FeedbackBatch:
         failed=sum(part.failed for part in parts),
         results=[result for part in parts for result in part.results],
     )
+
+
+def _encode_image(image: RecognizeImage) -> str:
+    if isinstance(image, (bytes, bytearray, memoryview)):
+        return base64.b64encode(image).decode("ascii")
+    return image
+
+
+def _build_recognize_body(
+    *,
+    type: Optional[RecognizeType],
+    task: Optional[str],
+    image_data: Optional[Sequence[RecognizeImage]],
+    image_urls: Optional[Sequence[str]],
+    image_examples: Optional[Sequence[RecognizeImage]],
+    data: Optional[RecognizeTasklist],
+    host: Optional[str],
+) -> dict[str, Any]:
+    for name, images in (
+        ("image_data", image_data),
+        ("image_urls", image_urls),
+        ("image_examples", image_examples),
+    ):
+        if isinstance(images, (str, bytes)):
+            raise TypeError(f"{name} must be a list of images, not a single one.")
+    body: dict[str, Any]
+    if data is not None:
+        if any(v is not None for v in (type, task, image_data, image_urls, image_examples)):
+            raise ValueError("Pass either data= (the full tasklist) or type=/task=/images.")
+        body = {"data": data}
+    else:
+        if type is None or task is None:
+            raise ValueError("recognize() needs type= and task=, or the tasklist as data=.")
+        body = {"type": type, "task": task}
+        if image_data is not None and image_urls is None:
+            body["image_data"] = [_encode_image(image) for image in image_data]
+        elif image_urls is not None and image_data is None:
+            body["image_urls"] = list(image_urls)
+        else:
+            raise ValueError("Pass exactly one of image_data or image_urls.")
+        if image_examples is not None:
+            body["image_examples"] = [_encode_image(image) for image in image_examples]
+    if host is not None:
+        body["host"] = host
+    return body
 
 
 def _process_response(response: httpx.Response) -> Any:
@@ -591,6 +650,95 @@ class NoneCap(_BaseClient):
         )
         return self.solves._start_from_body(body).result(timeout)
 
+    @overload
+    def recognize(
+        self,
+        *,
+        type: Literal["hcaptcha"],
+        task: str,
+        image_data: Optional[Sequence[RecognizeImage]] = None,
+        image_urls: Optional[Sequence[str]] = None,
+        image_examples: Optional[Sequence[RecognizeImage]] = None,
+        host: Optional[str] = None,
+    ) -> Recognition[list[bool], None]: ...
+
+    @overload
+    def recognize(
+        self,
+        *,
+        type: Literal["hcaptcha_area_select"],
+        task: str,
+        image_data: Optional[Sequence[RecognizeImage]] = None,
+        image_urls: Optional[Sequence[str]] = None,
+        image_examples: Optional[Sequence[RecognizeImage]] = None,
+        host: Optional[str] = None,
+    ) -> Recognition[RecognizeBox, list[RecognizePoint]]: ...
+
+    @overload
+    def recognize(
+        self,
+        *,
+        data: RecognizeTasklist,
+        host: Optional[str] = None,
+    ) -> Recognition[RecognitionTasklistData, Optional[list[list[RecognizePoint]]]]: ...
+
+    def recognize(
+        self,
+        *,
+        type: Optional[RecognizeType] = None,
+        task: Optional[str] = None,
+        image_data: Optional[Sequence[RecognizeImage]] = None,
+        image_urls: Optional[Sequence[str]] = None,
+        image_examples: Optional[Sequence[RecognizeImage]] = None,
+        data: Optional[RecognizeTasklist] = None,
+        host: Optional[str] = None,
+    ) -> Recognition[Any, Any]:
+        """Recognize one challenge's images and return the answer in the same response.
+
+        For callers that run their own browser or extension and want only the answer:
+        no token, no polling. Send either the simple form (``type``, ``task`` and exactly
+        one of ``image_data`` / ``image_urls``) or the challenge's full tasklist as
+        ``data``; :class:`Recognition` says which answer shape comes back. ``host`` is the
+        site's bare domain, when you know it.
+
+        Raises :class:`RecognitionFailedError` when no answer was found or the challenge
+        type is not supported; nothing is charged then. Report how the challenge ended
+        with :meth:`report_recognition_outcome` to get a failed one refunded.
+
+        >>> rec = nc.recognize(
+        ...     type="hcaptcha", task="Please click each image containing a bus",
+        ...     image_data=tiles,
+        ... )
+        >>> rec.data
+        [True, False, False, True, False, False, False, True, False]
+        """
+        body = _build_recognize_body(
+            type=type,
+            task=task,
+            image_data=image_data,
+            image_urls=image_urls,
+            image_examples=image_examples,
+            data=data,
+            host=host,
+        )
+        return Recognition._from_dict(self._request("POST", "/v1/recognize", json=body))
+
+    def report_recognition_outcome(
+        self, recognition_id: str, result: RecognitionOutcome
+    ) -> RecognitionOutcomeResult:
+        """Report whether a recognition's answer worked on the challenge.
+
+        Optional. ``"failed"`` refunds the recognition in full when reported within 15
+        minutes of it; ``"solved"`` only records it. The first report sticks: a repeat
+        returns the recorded outcome with ``refunded_credits == 0``. Raises
+        :class:`NotFoundError` for an id that is not one of your recognitions and
+        :class:`ValidationError` (code ``expired_window``) once the window has closed.
+        """
+        payload = self._request(
+            "POST", "/v1/recognize/outcome", json={"id": recognition_id, "result": result}
+        )
+        return RecognitionOutcomeResult._from_dict(payload)
+
     def me(self) -> Account:
         """Fetch your account, including the current credit balance."""
         return Account._from_dict(self._request("GET", "/v1/me"))
@@ -991,6 +1139,88 @@ class AsyncNoneCap(_BaseClient):
         )
         handle = await self.solves._start_from_body(body)
         return await handle.result(timeout)
+
+    @overload
+    async def recognize(
+        self,
+        *,
+        type: Literal["hcaptcha"],
+        task: str,
+        image_data: Optional[Sequence[RecognizeImage]] = None,
+        image_urls: Optional[Sequence[str]] = None,
+        image_examples: Optional[Sequence[RecognizeImage]] = None,
+        host: Optional[str] = None,
+    ) -> Recognition[list[bool], None]: ...
+
+    @overload
+    async def recognize(
+        self,
+        *,
+        type: Literal["hcaptcha_area_select"],
+        task: str,
+        image_data: Optional[Sequence[RecognizeImage]] = None,
+        image_urls: Optional[Sequence[str]] = None,
+        image_examples: Optional[Sequence[RecognizeImage]] = None,
+        host: Optional[str] = None,
+    ) -> Recognition[RecognizeBox, list[RecognizePoint]]: ...
+
+    @overload
+    async def recognize(
+        self,
+        *,
+        data: RecognizeTasklist,
+        host: Optional[str] = None,
+    ) -> Recognition[RecognitionTasklistData, Optional[list[list[RecognizePoint]]]]: ...
+
+    async def recognize(
+        self,
+        *,
+        type: Optional[RecognizeType] = None,
+        task: Optional[str] = None,
+        image_data: Optional[Sequence[RecognizeImage]] = None,
+        image_urls: Optional[Sequence[str]] = None,
+        image_examples: Optional[Sequence[RecognizeImage]] = None,
+        data: Optional[RecognizeTasklist] = None,
+        host: Optional[str] = None,
+    ) -> Recognition[Any, Any]:
+        """Recognize one challenge's images and return the answer in the same response.
+
+        For callers that run their own browser or extension and want only the answer:
+        no token, no polling. Send either the simple form (``type``, ``task`` and exactly
+        one of ``image_data`` / ``image_urls``) or the challenge's full tasklist as
+        ``data``; :class:`Recognition` says which answer shape comes back. ``host`` is the
+        site's bare domain, when you know it.
+
+        Raises :class:`RecognitionFailedError` when no answer was found or the challenge
+        type is not supported; nothing is charged then. Report how the challenge ended
+        with :meth:`report_recognition_outcome` to get a failed one refunded.
+        """
+        body = _build_recognize_body(
+            type=type,
+            task=task,
+            image_data=image_data,
+            image_urls=image_urls,
+            image_examples=image_examples,
+            data=data,
+            host=host,
+        )
+        return Recognition._from_dict(await self._request("POST", "/v1/recognize", json=body))
+
+    async def report_recognition_outcome(
+        self, recognition_id: str, result: RecognitionOutcome
+    ) -> RecognitionOutcomeResult:
+        """Report whether a recognition's answer worked on the challenge.
+
+        Optional. ``"failed"`` refunds the recognition in full when reported within 15
+        minutes of it; ``"solved"`` only records it. The first report sticks: a repeat
+        returns the recorded outcome with ``refunded_credits == 0``. Raises
+        :class:`NotFoundError` for an id that is not one of your recognitions and
+        :class:`ValidationError` (code ``expired_window``) once the window has closed.
+        """
+        payload = await self._request(
+            "POST", "/v1/recognize/outcome", json={"id": recognition_id, "result": result}
+        )
+        return RecognitionOutcomeResult._from_dict(payload)
 
     async def me(self) -> Account:
         """Fetch your account, including the current credit balance."""

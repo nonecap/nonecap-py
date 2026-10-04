@@ -7,9 +7,10 @@ ignore unknown ones, so new server-side fields never break old clients.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Optional, TypedDict, Union
+from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar, Union
 
 SolveType = Literal["hcaptcha", "hcaptcha_enterprise"]
 """Captcha type a solve targets."""
@@ -303,6 +304,151 @@ class FeedbackBatch:
             unchanged=int(payload.get("unchanged", 0)),
             failed=int(payload.get("failed", 0)),
             results=[FeedbackResult._from_dict(item) for item in payload.get("results", [])],
+        )
+
+
+RecognizeType = Literal["hcaptcha", "hcaptcha_area_select"]
+"""The simple recognition form: ``hcaptcha`` is a grid of 1-27 tiles answered with one
+boolean each, ``hcaptcha_area_select`` one image answered with the point(s) to click."""
+
+RecognizeImage = Union[str, bytes]
+"""An image for ``recognize``: base64 (bare or a ``data:`` URI) or raw bytes, which the
+client base64-encodes. PNG, JPEG, WebP or GIF, up to 1.5 MiB decoded."""
+
+RecognizeRequestType = Literal[
+    "image_label_binary", "image_label_area_select", "image_drag_drop"
+]
+"""The ``request_type`` of a full tasklist, as hCaptcha serves it."""
+
+RecognitionOutcome = Literal["solved", "failed"]
+"""Whether a recognition's answer worked on the challenge."""
+
+
+class RecognizeQuestion(TypedDict):
+    en: str
+
+
+class _RecognizeEntityRequired(TypedDict):
+    entity_id: str
+    coords: Sequence[float]
+    size: Sequence[float]
+
+
+class RecognizeEntity(_RecognizeEntityRequired, total=False):
+    """A draggable piece of an ``image_drag_drop`` task. ``coords`` and ``size`` are
+    ``[x, y]`` and ``[w, h]`` in image pixels."""
+
+    entity_uri: str
+    """The piece's image, as base64 or an hCaptcha image URL."""
+
+
+class _RecognizeTaskRequired(TypedDict):
+    task_key: str
+    datapoint_uri: str
+    """The task's image, as base64 (bare or a ``data:`` URI) or an hCaptcha image URL."""
+
+
+class RecognizeTask(_RecognizeTaskRequired, total=False):
+    """One task of a :class:`RecognizeTasklist`."""
+
+    entities: list[RecognizeEntity]
+
+
+class _RecognizeTasklistRequired(TypedDict):
+    request_type: RecognizeRequestType
+    requester_question: RecognizeQuestion
+    tasklist: list[RecognizeTask]
+
+
+class RecognizeTasklist(_RecognizeTasklistRequired, total=False):
+    """The full recognition form: the challenge's tasklist as hCaptcha served it
+    (NopeCHA's v1 recognition body), passed as ``recognize(data=...)``."""
+
+    requester_question_example: list[str]
+    request_config: dict[str, Any]
+
+
+class RecognizePoint(TypedDict):
+    """A point, in percent of the image's width and height."""
+
+    x: float
+    y: float
+
+
+class RecognizeBox(TypedDict):
+    """A box (top-left and size), in percent of the image. Area-select answers are a
+    point, so ``w`` and ``h`` are 0."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class RecognizeDrop(RecognizeBox):
+    """Where to drop one entity: a box centred on the drop point, sized by the
+    entity's ``size``."""
+
+    entity_id: str
+
+
+RecognitionTasklistData = Union[
+    list[list[bool]], list[Optional[RecognizeBox]], list[list[RecognizeDrop]]
+]
+"""``data`` for the full form, by ``request_type``: ``image_label_binary`` pages of 9
+booleans, ``image_label_area_select`` one box per task (None when it has no point),
+``image_drag_drop`` per task where to drop each entity."""
+
+DataT = TypeVar("DataT")
+PointsT = TypeVar("PointsT")
+
+
+@dataclass(frozen=True)
+class Recognition(Generic[DataT, PointsT]):
+    """The answer to ``client.recognize``. ``data`` takes the shape of the request:
+
+    - ``type="hcaptcha"``: ``list[bool]``, one per tile in request order; ``points``
+      is None.
+    - ``type="hcaptcha_area_select"``: the first point to click as a
+      :class:`RecognizeBox` (``w`` and ``h`` are 0); ``points`` lists every point,
+      for wordings that take several clicks.
+    - ``data=`` (full form): a :data:`RecognitionTasklistData`; ``points`` is one
+      list of points per task for ``image_label_area_select``, otherwise None.
+    """
+
+    id: str
+    """The recognition's id (``extsess_…``), for ``report_recognition_outcome``."""
+    data: DataT
+    points: PointsT
+    credits_charged: int
+
+    @classmethod
+    def _from_dict(cls, payload: dict[str, Any]) -> Recognition[Any, Any]:
+        points: Any = payload.get("points")
+        return cls(
+            id=payload["id"],
+            data=payload["data"],
+            points=points,
+            credits_charged=int(payload.get("credits_charged", 0)),
+        )
+
+
+@dataclass(frozen=True)
+class RecognitionOutcomeResult:
+    """The result of ``client.report_recognition_outcome``."""
+
+    id: str
+    result: RecognitionOutcome
+    """The recorded outcome. The first report sticks: a repeat returns it with
+    ``refunded_credits == 0``."""
+    refunded_credits: int
+
+    @classmethod
+    def _from_dict(cls, payload: dict[str, Any]) -> RecognitionOutcomeResult:
+        return cls(
+            id=payload["id"],
+            result=payload["result"],
+            refunded_credits=int(payload.get("refunded_credits", 0)),
         )
 
 
