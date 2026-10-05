@@ -93,7 +93,8 @@ class ProxyUnavailableError(RateLimitError):
 
 class RateCappedError(RateLimitError):
     """429 — your account has a submit rate cap on this sitekey and reached it for the
-    trailing minute. Nothing was charged; wait ``retry_after`` seconds."""
+    trailing minute, or your own-proxy sessions for this sitekey are at their limit.
+    Nothing was charged; wait ``retry_after`` seconds."""
 
 
 class APIError(NoneCapError):
