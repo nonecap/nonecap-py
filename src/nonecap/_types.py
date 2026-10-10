@@ -7,7 +7,7 @@ ignore unknown ones, so new server-side fields never break old clients.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Optional, TypedDict, Union
 
@@ -85,6 +85,16 @@ class SolveError:
 
 
 @dataclass(frozen=True)
+class SolveWarning:
+    """One advisory on a solve."""
+
+    code: str
+    """``proxy_session_refused``, or a code this client does not know yet."""
+    message: str
+    """What happened and what to do."""
+
+
+@dataclass(frozen=True)
 class Solve:
     """A solve resource, exactly as the API returns it."""
 
@@ -118,6 +128,11 @@ class Solve:
     reject a token submitted by a different browser version, so send the token with this
     as your ``User-Agent`` header (and from the same IP as your proxy, if you gave one).
     Set alongside ``token``, otherwise None."""
+    warnings: list[SolveWarning] = field(default_factory=list)
+    """Advisories about this solve; empty when there is none. ``proxy_session_refused``:
+    you reported the latest token(s) solved through this solve's ``proxy`` as rejected,
+    and tokens from that proxy session are likely to be refused too, so switch to a new
+    proxy session for your next solves. The solve still runs."""
 
     @property
     def is_terminal(self) -> bool:
@@ -153,6 +168,11 @@ class Solve:
             queue_ms=data.get("queue_ms"),
             resolve_ms=data.get("resolve_ms"),
             user_agent=data.get("user_agent"),
+            warnings=[
+                SolveWarning(code=str(w.get("code", "")), message=str(w.get("message", "")))
+                for w in (data.get("warnings") or [])
+                if isinstance(w, dict)
+            ],
         )
 
 
