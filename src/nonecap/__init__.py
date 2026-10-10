@@ -55,6 +55,7 @@ from ._types import (
     SolvePage,
     SolveStatus,
     SolveType,
+    SolveWarning,
 )
 from ._version import __version__
 
@@ -72,6 +73,7 @@ __all__ = [
     "SolveErrorCode",
     "SolveErrorReason",
     "SolvePage",
+    "SolveWarning",
     "Account",
     "Proxy",
     "SolveType",

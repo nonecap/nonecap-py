@@ -24,6 +24,7 @@ from nonecap import (
     SolveErrorReason,
     SolveFailedError,
     SolveTimeoutError,
+    SolveWarning,
     UnsupportedMediaTypeError,
     ValidationError,
 )
@@ -84,6 +85,15 @@ class TestRetrieve:
         del payload["user_agent"]
         nc = client_for(Script((200, payload)))
         assert nc.solves.retrieve("solve_1").user_agent is None
+
+    def test_returns_warnings_and_defaults_to_empty(self) -> None:
+        warning = {"code": "proxy_session_refused", "message": "Switch to a new proxy session."}
+        nc = client_for(Script((202, solve_payload(warnings=[warning]))))
+        assert nc.solves.retrieve("solve_1").warnings == [
+            SolveWarning(code="proxy_session_refused", message="Switch to a new proxy session.")
+        ]
+        nc = client_for(Script((200, solve_payload())))
+        assert nc.solves.retrieve("solve_1").warnings == []
 
 
 class TestCreate:
