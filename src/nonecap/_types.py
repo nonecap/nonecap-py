@@ -130,9 +130,9 @@ class Solve:
     Set alongside ``token``, otherwise None."""
     warnings: list[SolveWarning] = field(default_factory=list)
     """Advisories about this solve; empty when there is none. ``proxy_session_refused``:
-    you reported the latest token(s) solved through this solve's ``proxy`` as rejected,
-    and tokens from that proxy session are likely to be refused too, so switch to a new
-    proxy session for your next solves. The solve still runs."""
+    the last token(s) you reported from this solve's ``proxy`` session were rejected. A
+    new proxy session is more likely to pass, so switch to one for your next solves. The
+    solve still runs."""
 
     @property
     def is_terminal(self) -> bool:
