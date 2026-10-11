@@ -253,7 +253,7 @@ class Solves:
         """Submit a solve. Pass ``wait`` (1-90 seconds) to hold the connection
         open until it finishes instead of returning a pending solve.
 
-        ``user_agent``: optional.
+        ``user_agent``. Optional.
         Send the user agent of the browser that loaded the page, as is.
         On most sites it changes nothing; on some it is required for the token to be accepted.
         If you do not have it, leave the field out."""
@@ -636,7 +636,7 @@ class AsyncSolves:
         """Submit a solve. Pass ``wait`` (1-90 seconds) to hold the connection
         open until it finishes instead of returning a pending solve.
 
-        ``user_agent``: optional.
+        ``user_agent``. Optional.
         Send the user agent of the browser that loaded the page, as is.
         On most sites it changes nothing; on some it is required for the token to be accepted.
         If you do not have it, leave the field out."""
