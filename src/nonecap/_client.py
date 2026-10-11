@@ -93,11 +93,9 @@ def _build_solve_body(
     body: dict[str, Any] = {"type": type, "sitekey": sitekey, "url": url}
     if rqdata is not None:
         body["rqdata"] = rqdata
-    # DEPRECATED 2026-08-13: still sent so nothing changes for callers who pass it, but the
-    # API accepts and ignores it. Every solve now presents its own coherent browser identity
-    # (user agent, client hints, language header and proof-of-work describing one machine);
-    # a caller-supplied string replaced only some of those and made the request contradict
-    # itself. Safe to stop passing.
+    # user_agent. Optional. Send the user agent of the browser that loaded the page, as is.
+    # On most sites it changes nothing; on some it is required for the token to be accepted.
+    # If you do not have it, leave the field out.
     if user_agent is not None:
         body["user_agent"] = user_agent
     if proxy is not None:
@@ -253,7 +251,12 @@ class Solves:
         wait: Optional[int] = None,
     ) -> Solve:
         """Submit a solve. Pass ``wait`` (1-90 seconds) to hold the connection
-        open until it finishes instead of returning a pending solve."""
+        open until it finishes instead of returning a pending solve.
+
+        ``user_agent``: optional.
+        Send the user agent of the browser that loaded the page, as is.
+        On most sites it changes nothing; on some it is required for the token to be accepted.
+        If you do not have it, leave the field out."""
         body = _build_solve_body(
             type=type,
             sitekey=sitekey,
@@ -631,7 +634,12 @@ class AsyncSolves:
         wait: Optional[int] = None,
     ) -> Solve:
         """Submit a solve. Pass ``wait`` (1-90 seconds) to hold the connection
-        open until it finishes instead of returning a pending solve."""
+        open until it finishes instead of returning a pending solve.
+
+        ``user_agent``: optional.
+        Send the user agent of the browser that loaded the page, as is.
+        On most sites it changes nothing; on some it is required for the token to be accepted.
+        If you do not have it, leave the field out."""
         body = _build_solve_body(
             type=type,
             sitekey=sitekey,
