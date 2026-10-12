@@ -39,7 +39,7 @@ def recognition_payload(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "id": SESSION_ID,
         "data": [True, False, True],
-        "credits_charged": 10,
+        "credits_charged": 5,
     }
     base.update(overrides)
     return base
@@ -89,7 +89,7 @@ class TestRecognize:
         assert rec.id == SESSION_ID
         assert rec.data == [True, False, True]
         assert rec.points is None
-        assert rec.credits_charged == 10
+        assert rec.credits_charged == 5
 
     def test_base64_encodes_raw_image_bytes(self) -> None:
         script = Script((200, recognition_payload()))
