@@ -18,6 +18,12 @@ from nonecap import (
     FeedbackBatch,
     FeedbackReport,
     NoneCap,
+    Recognition,
+    RecognitionOutcomeResult,
+    RecognitionTasklistData,
+    RecognizeBox,
+    RecognizePoint,
+    RecognizeTasklist,
     Solve,
     SolveErrorReason,
     SolveHandle,
@@ -76,6 +82,52 @@ async def feedback_cases_async() -> None:
     _b: FeedbackBatch = await anc.feedback.report_many(
         [{"solve_id": "solve_1", "outcome": "accepted"}]
     )
+
+
+def recognize_cases() -> None:
+    grid: Recognition[list[bool], None] = nc.recognize(
+        type="hcaptcha", task="t", image_data=["b64", b"raw"]
+    )
+    _tiles: list[bool] = grid.data
+    area: Recognition[RecognizeBox, list[RecognizePoint]] = nc.recognize(
+        type="hcaptcha_area_select", task="t", image_urls=["https://imgs.hcaptcha.com/x"]
+    )
+    _x: float = area.data["x"]
+    _first: RecognizePoint = area.points[0]
+    tasklist: RecognizeTasklist = {
+        "request_type": "image_drag_drop",
+        "requester_question": {"en": "t"},
+        "tasklist": [
+            {
+                "task_key": "k",
+                "datapoint_uri": "b64",
+                "entities": [{"entity_id": "e", "coords": [1, 2], "size": [3.5, 4]}],
+            }
+        ],
+    }
+    full: Recognition[RecognitionTasklistData, Optional[list[list[RecognizePoint]]]] = (
+        nc.recognize(data=tasklist, host="example.com")
+    )
+    _id: str = full.id
+    _o: RecognitionOutcomeResult = nc.report_recognition_outcome(full.id, "failed")
+    # An unknown recognition type must not type-check.
+    nc.recognize(type="hcaptcha_multiple_choice", task="t", image_data=["b64"])  # type: ignore[call-overload]
+    # The simple form and the tasklist do not mix.
+    nc.recognize(data=tasklist, type="hcaptcha", task="t")  # type: ignore[call-overload]
+    # An outcome other than solved/failed must not type-check.
+    nc.report_recognition_outcome("extsess_1", "accepted")  # type: ignore[arg-type]
+    # A tasklist with an unknown request_type must not type-check.
+    _bad: RecognizeTasklist = {
+        "request_type": "image_label_multiple_choice",  # type: ignore[typeddict-item]
+        "requester_question": {"en": "t"},
+        "tasklist": [],
+    }
+
+
+async def recognize_cases_async() -> None:
+    grid = await anc.recognize(type="hcaptcha", task="t", image_data=[b"raw"])
+    _tiles: list[bool] = grid.data
+    _o: RecognitionOutcomeResult = await anc.report_recognition_outcome(grid.id, "solved")
 
 
 def negative_cases() -> None:
