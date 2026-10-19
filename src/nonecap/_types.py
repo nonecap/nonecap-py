@@ -483,7 +483,7 @@ class AccountPlan:
     used_today: int
     #: ``daily_solves - used_today``, never below 0.
     remaining_today: int
-    #: The next reset, always 00:00 UTC (08:00 in Beijing), as RFC 3339.
+    #: The next reset, always 00:00 UTC, as RFC 3339.
     resets_at: str
 
     @classmethod
