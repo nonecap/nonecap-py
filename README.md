@@ -278,6 +278,9 @@ for s in nc.solves.list_all():
 # Your account and credit balance
 me = nc.me()
 print(me.credits_balance)
+# With a plan: what is left of today's solves, and when they reset (00:00 UTC).
+if me.plan:
+    print(me.plan.remaining_today, me.plan.resets_at)
 ```
 
 On `AsyncNoneCap` the same methods are coroutines, and `list_all()` is an async iterator (`async for s in nc.solves.list_all()`).

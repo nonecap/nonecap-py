@@ -41,6 +41,7 @@ from ._errors import (
 from ._types import (
     TERMINAL_STATUSES,
     Account,
+    AccountPlan,
     Feedback,
     FeedbackBatch,
     FeedbackItemError,
@@ -90,6 +91,7 @@ __all__ = [
     "SolvePage",
     "SolveWarning",
     "Account",
+    "AccountPlan",
     "Proxy",
     "SolveType",
     "SolveStatus",

@@ -473,6 +473,32 @@ class RecognitionOutcomeResult:
 
 
 @dataclass(frozen=True)
+class AccountPlan:
+    """Your plan's day: what is left of today's solves and when they reset."""
+
+    id: str
+    name: str
+    #: The day's allowance of solves.
+    daily_solves: int
+    used_today: int
+    #: ``daily_solves - used_today``, never below 0.
+    remaining_today: int
+    #: The next reset, always 00:00 UTC (08:00 in Beijing), as RFC 3339.
+    resets_at: str
+
+    @classmethod
+    def _from_dict(cls, data: dict[str, Any]) -> AccountPlan:
+        return cls(
+            id=data["id"],
+            name=data.get("name", data["id"]),
+            daily_solves=int(data.get("daily_solves", 0)),
+            used_today=int(data.get("used_today", 0)),
+            remaining_today=int(data.get("remaining_today", 0)),
+            resets_at=data.get("resets_at", ""),
+        )
+
+
+@dataclass(frozen=True)
 class Account:
     """Your account, including the current credit balance."""
 
@@ -481,13 +507,17 @@ class Account:
     email: str
     credits_balance: int
     created_at: str
+    #: Your plan's day, or None without a plan (or from an API older than this SDK).
+    plan: Optional[AccountPlan] = None
 
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> Account:
+        plan = data.get("plan")
         return cls(
             object=data.get("object", "account"),
             id=data["id"],
             email=data.get("email", ""),
             credits_balance=int(data.get("credits_balance", 0)),
             created_at=data.get("created_at", ""),
+            plan=AccountPlan._from_dict(plan) if isinstance(plan, dict) else None,
         )

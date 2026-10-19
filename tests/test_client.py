@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from nonecap import (
+    AccountPlan,
     APIError,
     AuthenticationError,
     ConcurrencyLimitError,
@@ -193,7 +194,37 @@ class TestMe:
         nc = client_for(script)
         me = nc.me()
         assert me.credits_balance == 42
+        assert me.plan is None
         assert script.requests[0].url.path == "/v1/me"
+
+    def test_plan_day(self) -> None:
+        plan = {
+            "id": "basic",
+            "name": "Basic",
+            "daily_solves": 1600,
+            "used_today": 412,
+            "remaining_today": 1188,
+            "resets_at": "2026-10-20T00:00:00.000Z",
+        }
+        base = {
+            "object": "account",
+            "id": "u_1",
+            "email": "a@b.com",
+            "credits_balance": 42,
+            "created_at": "x",
+        }
+        script = Script((200, {**base, "plan": plan}), (200, {**base, "plan": None}))
+        nc = client_for(script)
+        me = nc.me()
+        assert me.plan == AccountPlan(
+            id="basic",
+            name="Basic",
+            daily_solves=1600,
+            used_today=412,
+            remaining_today=1188,
+            resets_at="2026-10-20T00:00:00.000Z",
+        )
+        assert nc.me().plan is None
 
 
 class TestErrorMapping:
