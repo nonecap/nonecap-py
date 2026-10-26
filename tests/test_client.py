@@ -96,6 +96,12 @@ class TestRetrieve:
         nc = client_for(Script((200, solve_payload())))
         assert nc.solves.retrieve("solve_1").warnings == []
 
+    def test_returns_a_proxy_recommended_warning(self) -> None:
+        warning = {"code": "proxy_recommended", "message": "Send your proxy."}
+        nc = client_for(Script((200, solve_payload(warnings=[warning]))))
+        codes = [w.code for w in nc.solves.retrieve("solve_1").warnings]
+        assert codes == ["proxy_recommended"]
+
 
 class TestCreate:
     def test_posts_with_bearer_auth_and_json_body(self) -> None:
