@@ -99,6 +99,17 @@ class TestRetrieve:
         nc = client_for(Script((200, solve_payload())))
         assert nc.solves.retrieve("solve_1").warnings == []
 
+    def test_returns_the_sticky_session_variant_as_sent(self) -> None:
+        message = (
+            "Your proxy changed its exit IP during this solve. "
+            "Use a sticky session per solve, and submit the token through that same session."
+        )
+        warning = {"code": "proxy_session_refused", "message": message}
+        nc = client_for(Script((200, solve_payload(warnings=[warning]))))
+        assert nc.solves.retrieve("solve_1").warnings == [
+            SolveWarning(code="proxy_session_refused", message=message)
+        ]
+
     def test_returns_a_proxy_recommended_warning(self) -> None:
         warning = {"code": "proxy_recommended", "message": "Send your proxy."}
         nc = client_for(Script((200, solve_payload(warnings=[warning]))))

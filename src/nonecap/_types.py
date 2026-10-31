@@ -134,7 +134,10 @@ class Solve:
     """Advisories about this solve; empty when there is none. ``proxy_session_refused``:
     the last token(s) you reported through this solve's ``proxy`` session or its exit IP
     were rejected. A different exit IP is more likely to pass, so switch to one for your
-    next solves.
+    next solves. When your proxy changed its exit IP during the solve, the same code advises
+    a sticky session per solve instead, with the token submitted through that same session,
+    and on a page that is much more likely to accept a token solved through the same
+    connection you submit it from it does so from the first such solve.
     ``proxy_recommended``: this page is much more likely to accept a token solved through
     the same connection you submit it from, and this solve did not run through yours; send
     your proxy in ``proxy``, and make sure it works. The solve still runs."""
