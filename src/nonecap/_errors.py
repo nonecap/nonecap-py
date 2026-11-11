@@ -110,6 +110,11 @@ class ServiceUnavailableError(APIError):
     """503 — new solves are paused for maintenance. Retry shortly."""
 
 
+class SitekeyUnavailableError(ServiceUnavailableError):
+    """503 — solving for this sitekey is currently in maintenance. Retry after
+    ``retry_after`` seconds."""
+
+
 class APIConnectionError(NoneCapError):
     """The request never reached the API (DNS, TCP, TLS, offline)."""
 
@@ -211,6 +216,8 @@ def error_from_response(
         cls = RecognitionFailedError
     elif code == "maintenance":
         cls = ServiceUnavailableError
+    elif code == "sitekey_unavailable":
+        cls = SitekeyUnavailableError
     else:
         cls = APIError
     return cls(
